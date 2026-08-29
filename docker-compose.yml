@@ -1,0 +1,29 @@
+services:
+  backend:
+    build: ./backend
+    container_name: yuzuki-backend
+    environment:
+      - PORT=3000
+      - DATA_DIR=/data
+      # 令牌签名密钥：务必改成随机字符串（可用 openssl rand -hex 32 生成），
+      # 否则任何拿到默认值的人都能伪造登录态。
+      - AUTH_SECRET=${AUTH_SECRET:-yuzuki-secret-change-me}
+    volumes:
+      # 数据目录（SQLite 数据库 + 封面缓存）。默认挂载仓库的 backend/data，
+      # 这样本地开发积累的库在 Docker 里能直接用。
+      - ./backend/data:/data
+      # ---- ASMR 源目录：每个源都要挂载，且「设置」里填写的源路径必须是对应的容器内路径 ----
+      # Windows 宿主示例：- "D:/我的ASMR:/asmr1:ro"
+      # Linux 宿主示例  ：- "/home/user/asmr:/asmr1:ro"
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: yuzuki-frontend
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    restart: unless-stopped
