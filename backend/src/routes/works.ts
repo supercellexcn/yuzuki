@@ -14,7 +14,7 @@ export const worksRouter = Router()
 worksRouter.use(authMiddleware)
 
 export interface FilterCond {
-  type: 'circle' | 'actor' | 'tag'
+  type: 'circle' | 'series' | 'actor' | 'tag'
   value: string
 }
 
@@ -32,7 +32,7 @@ function parseConds(raw: unknown): FilterCond[] {
     if (idx <= 0) continue
     const type = s.slice(0, idx)
     const value = s.slice(idx + 1).trim()
-    if (!value || (type !== 'circle' && type !== 'actor' && type !== 'tag')) continue
+    if (!value || (type !== 'circle' && type !== 'series' && type !== 'actor' && type !== 'tag')) continue
     out.push({ type, value })
   }
   return out.slice(0, 5)
@@ -60,6 +60,9 @@ function buildWhere(q: string, conds: FilterCond[]): WhereResult {
   for (const c of conds) {
     if (c.type === 'circle') {
       where.push('w.circle = ?')
+      params.push(c.value)
+    } else if (c.type === 'series') {
+      where.push('w.series = ?')
       params.push(c.value)
     } else if (c.type === 'actor') {
       where.push(

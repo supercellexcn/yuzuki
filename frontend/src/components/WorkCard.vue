@@ -13,7 +13,7 @@
       <!-- 类型标签叠加在封面上（桌面长按收藏标签） -->
       <div v-if="work.tags.length" class="cover-tags">
         <span
-          v-for="t in work.tags.slice(0, 4)"
+          v-for="t in work.tags"
           :key="'t' + t.name + t.category"
           class="cover-tag"
           :class="{ 'tag-custom': t.category === CUSTOM_TAG }"
@@ -26,6 +26,14 @@
     <!-- 移动端：长按非封面区域（信息区）打开收藏选择器 -->
     <div class="meta" v-longpress="isMobile ? openFavPicker : undefined">
       <div class="title" :title="work.title">{{ work.title || work.rj_code }}</div>
+      <div
+        class="row row-click"
+        v-if="work.series"
+        @click.stop="emit('select-series', work.series)"
+      >
+        <span class="label">系列</span>
+        <span class="value">{{ work.series }}</span>
+      </div>
       <div
         class="row row-click"
         v-if="work.circle"
@@ -69,6 +77,7 @@ import { useFavoritesStore } from '../stores/favorites'
 const props = defineProps<{ work: Work }>()
 const emit = defineEmits<{
   (e: 'select-circle', name: string): void
+  (e: 'select-series', name: string): void
   (e: 'select-actor', name: string): void
   (e: 'select-tag', name: string): void
 }>()
@@ -147,7 +156,7 @@ function openFavPicker() {
   flex-wrap: wrap;
   gap: 4px;
   padding: 14px 6px 6px;
-  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.6));
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.72));
 }
 .cover-tag {
   font-size: 11px;

@@ -121,7 +121,12 @@ export interface CircleCount {
   count: number
 }
 
-export type FilterCondType = 'circle' | 'actor' | 'tag'
+export interface SeriesCount {
+  name: string
+  count: number
+}
+
+export type FilterCondType = 'circle' | 'series' | 'actor' | 'tag'
 
 export interface FilterCond {
   type: FilterCondType

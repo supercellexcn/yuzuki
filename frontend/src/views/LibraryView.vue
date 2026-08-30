@@ -32,6 +32,12 @@
         @select="(v) => addCond('circle', v)"
       />
       <FilterMenu
+        label="全部系列"
+        :items="series"
+        :active-values="activeOf('series')"
+        @select="(v) => addCond('series', v)"
+      />
+      <FilterMenu
         label="全部声优"
         :items="actors"
         :active-values="activeOf('actor')"
@@ -93,6 +99,7 @@
         :key="w.id"
         :work="w"
         @select-circle="(v) => addCond('circle', v)"
+        @select-series="(v) => addCond('series', v)"
         @select-actor="(v) => addCond('actor', v)"
         @select-tag="(v) => addCond('tag', v)"
       />
@@ -112,8 +119,8 @@ import { ElMessage } from 'element-plus'
 import { getLastFromRoute } from '../router'
 import { useLibraryStore, SORT_OPTIONS, type SortKey } from '../stores/library'
 import { useAuthStore } from '../stores/auth'
-import { getTags, getActors, getCircles, getRecentPlays, authedUrl } from '../api'
-import type { TagCount, ActorCount, CircleCount, PlayRecord, FilterCondType } from '../api/types'
+import { getTags, getActors, getCircles, getSeries, getRecentPlays, authedUrl } from '../api'
+import type { TagCount, ActorCount, CircleCount, SeriesCount, PlayRecord, FilterCondType } from '../api/types'
 import SearchBar from '../components/SearchBar.vue'
 import WorkCard from '../components/WorkCard.vue'
 import FilterMenu from '../components/FilterMenu.vue'
@@ -125,6 +132,7 @@ const router = useRouter()
 const sort = ref<SortKey>(store.sort)
 const order = ref<'asc' | 'desc'>(store.order)
 const circles = ref<CircleCount[]>([])
+const series = ref<SeriesCount[]>([])
 const actors = ref<ActorCount[]>([])
 const tags = ref<TagCount[]>([])
 const recentPlays = ref<PlayRecord[]>([])
@@ -141,10 +149,10 @@ function addCond(type: FilterCondType, v: string) {
   if (!ok) ElMessage.warning('最多 5 个筛选条件')
 }
 function typeLabel(t: FilterCondType): string {
-  return { circle: '社团', actor: '声优', tag: '标签' }[t]
+  return { circle: '社团', series: '系列', actor: '声优', tag: '标签' }[t]
 }
-function tagType(t: FilterCondType): 'success' | 'warning' | 'info' {
-  return t === 'circle' ? 'success' : t === 'actor' ? 'warning' : 'info'
+function tagType(t: FilterCondType): 'success' | 'primary' | 'warning' | 'info' {
+  return t === 'circle' ? 'success' : t === 'series' ? 'primary' : t === 'actor' ? 'warning' : 'info'
 }
 function onSortChange(v: SortKey) {
   store.setSort(v)
@@ -161,8 +169,9 @@ function goFavorites() {
 
 async function loadLists() {
   try {
-    const [c, a, t] = await Promise.all([getCircles(), getActors(), getTags()])
+    const [c, s, a, t] = await Promise.all([getCircles(), getSeries(), getActors(), getTags()])
     circles.value = c
+    series.value = s
     actors.value = a
     tags.value = t
   } catch {

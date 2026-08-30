@@ -8,6 +8,7 @@ import type {
   TagCount,
   ActorCount,
   CircleCount,
+  SeriesCount,
   LoginResponse,
   AuthUser,
   LibraryPrefs,
@@ -107,6 +108,11 @@ export async function getActors(): Promise<ActorCount[]> {
 
 export async function getCircles(): Promise<CircleCount[]> {
   const { data } = await http.get('/circles')
+  return data
+}
+
+export async function getSeries(): Promise<SeriesCount[]> {
+  const { data } = await http.get('/series')
   return data
 }
 
@@ -300,6 +306,12 @@ export async function setAdminCover(rj: string, fileId: number): Promise<{ ok: b
 
 export async function restoreAdminCover(rj: string): Promise<{ ok: boolean }> {
   const { data } = await http.post(`/admin/works/${rj}/cover/restore`)
+  return data
+}
+
+/** 重新同步单个作品的元数据与封面（DLsite 优先，缺失时 HVDB 补；封面 DLsite 有就用 DLsite，否则用 HVDB）。 */
+export async function syncAdminWork(rj: string): Promise<{ ok: boolean }> {
+  const { data } = await http.post(`/admin/works/${rj}/sync`)
   return data
 }
 

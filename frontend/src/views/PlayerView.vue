@@ -26,8 +26,8 @@
           <div class="meta-row" v-if="work.release_date">
             <span class="label">发售日</span>{{ work.release_date }}
           </div>
-          <div class="meta-row" v-if="work.series">
-            <span class="label">系列</span>{{ work.series }}
+          <div class="meta-row clickable" v-if="work.series" @click="goSeries(work.series)">
+            <span class="label">系列</span><span class="value">{{ work.series }}</span>
           </div>
           <div class="meta-row" v-if="work.sales_count != null">
             <span class="label">销量</span>{{ work.sales_count.toLocaleString() }}
@@ -184,6 +184,10 @@ function goBack() {
 }
 function goCircle(name: string) {
   library.addCondition('circle', name)
+  router.push({ name: 'library' })
+}
+function goSeries(name: string) {
+  library.addCondition('series', name)
   router.push({ name: 'library' })
 }
 function goActor(name: string) {

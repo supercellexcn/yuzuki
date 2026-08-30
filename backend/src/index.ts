@@ -6,6 +6,7 @@ import { seedAdmin, authMiddleware } from './auth.js'
 import { authRouter } from './routes/auth.js'
 import { worksRouter } from './routes/works.js'
 import { circlesRouter } from './routes/circles.js'
+import { seriesRouter } from './routes/series.js'
 import { scanRouter } from './routes/scan.js'
 import { mediaRouter } from './routes/media.js'
 import { coverRouter } from './routes/cover.js'
@@ -48,6 +49,7 @@ app.use('/api/auth', authRouter)
 app.use('/api', authMiddleware)
 app.use('/api/works', worksRouter)
 app.use('/api/circles', circlesRouter)
+app.use('/api/series', seriesRouter)
 app.use('/api/scan', scanRouter)
 app.use('/api/media', mediaRouter)
 app.use('/api/cover', coverRouter)

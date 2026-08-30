@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { getDb } from '../db/connection.js'
 import { enrichWork } from '../services/enrich.js'
-import { setManualCover, restoreWorkCover } from '../services/workService.js'
+import { setManualCover, restoreWorkCover, syncWork } from '../services/workService.js'
 import { CUSTOM_TAG, hiddenWorkFlag } from '../services/hidden.js'
 
 export const adminRouter = Router()
@@ -132,6 +132,21 @@ adminRouter.post('/works/:rj/cover/restore', (req, res) => {
   if (!work) return res.status(404).json({ error: 'work not found' })
   restoreWorkCover(db, rj, work.id)
   res.json({ ok: true })
+})
+
+// POST /api/admin/works/:rj/sync —— 重新同步单个作品的元数据与封面
+// 元信息以 DLsite 优先、缺失时用 HVDB 补；封面 DLsite 有就用 DLsite，否则用 HVDB。
+adminRouter.post('/works/:rj/sync', async (req, res) => {
+  const db = getDb()
+  const rj = String(req.params.rj).toUpperCase()
+  const work = db.prepare('SELECT id FROM works WHERE rj_code = ?').get(rj) as { id: number } | undefined
+  if (!work) return res.status(404).json({ error: 'work not found' })
+  try {
+    await syncWork(db, work.id, rj)
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message })
+  }
 })
 
 // POST /api/admin/works/:rj/hidden —— 隐藏 / 展示作品 { hidden }

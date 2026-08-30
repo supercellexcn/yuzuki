@@ -52,7 +52,6 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
 
   // 1) HTML 主源：作品页 → 失败则试 announce 预告页（结构与作品页同构，复用同一解析器）
   const meta: Partial<DlsiteMeta> = { rj_code, actors: [], tags: [] }
-  let coverFromHtml = false
   try {
     const html = await fetchHtml(url, { retryOn404: false })
     Object.assign(meta, parseWorkPage(html, rj_code))
@@ -66,7 +65,8 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
   }
   if (meta.cover_url) {
     meta.cover_url = absolutize(meta.cover_url, base)
-    coverFromHtml = true
+    // DLsite 的「无图」占位图不算有效封面，置空让 api2/api1/HVDB 兜底
+    if (meta.cover_url.includes('no_img_main.gif')) meta.cover_url = ''
   }
 
   // 2) 只对缺失字段做惰性兜底，避免对在售作品产生额外请求
@@ -126,9 +126,8 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
     if (hvdb) {
       if (!meta.title && hvdb.title) meta.title = hvdb.title
       if (!meta.circle && hvdb.circle) meta.circle = hvdb.circle
-      // 封面优先级：HTML > HVDB > JSON(api2/api1)。
-      // 下架作品的 api2/api1 封面 URL 指向已删除的图片，下载会 404；HVDB 封面更可靠。
-      if (hvdb.cover_url && !coverFromHtml) meta.cover_url = hvdb.cover_url
+      // 封面优先级：DLsite(HTML/JSON) 有封面就用 DLsite 的，只有 DLsite 完全没有时才用 HVDB。
+      if (hvdb.cover_url && !meta.cover_url) meta.cover_url = hvdb.cover_url
       if (!meta.actors?.length && hvdb.actors.length) meta.actors = hvdb.actors
       if (!meta.tags?.length && hvdb.tags.length) meta.tags = hvdb.tags
     }

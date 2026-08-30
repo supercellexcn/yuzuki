@@ -102,10 +102,11 @@
           <el-tag v-else size="small" type="success">正常</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="openCover(row)">修改封面</el-button>
           <el-button size="small" @click="openTags(row)">标签</el-button>
+          <el-button size="small" :loading="syncingRj === row.rj_code" @click="syncWork(row)">同步</el-button>
           <el-button size="small" :type="row.hidden ? 'success' : 'warning'" @click="toggleHidden(row)">
             {{ row.hidden ? '展示' : '隐藏' }}
           </el-button>
@@ -133,7 +134,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getAdminWorks,
   getAdminCircles,
@@ -141,6 +142,7 @@ import {
   getAdminSeries,
   getAdminTags,
   setWorkHidden,
+  syncAdminWork,
   authedUrl,
 } from '../../api'
 import { CUSTOM_TAG } from '../../api/types'
@@ -169,6 +171,7 @@ const coverVisible = ref(false)
 const coverRj = ref('')
 const tagVisible = ref(false)
 const tagWork = ref<AdminWork | null>(null)
+const syncingRj = ref('')
 
 async function loadOptions() {
   try {
@@ -241,6 +244,29 @@ async function toggleHidden(row: AdminWork) {
     invalidateLibrary()
   } catch (e) {
     ElMessage.error('操作失败: ' + (e as Error).message)
+  }
+}
+
+/** 重新同步单个作品：DLsite 优先、缺失时 HVDB 补；封面 DLsite 有就用 DLsite，否则用 HVDB。 */
+async function syncWork(row: AdminWork) {
+  try {
+    await ElMessageBox.confirm(
+      `将重新从 DLsite / HVDB 抓取「${row.rj_code}」的元数据与封面并覆盖当前信息，是否继续？`,
+      '同步元信息',
+      { type: 'warning', confirmButtonText: '同步', cancelButtonText: '取消' }
+    )
+  } catch {
+    return // 用户取消
+  }
+  syncingRj.value = row.rj_code
+  try {
+    await syncAdminWork(row.rj_code)
+    ElMessage.success(`已同步 ${row.rj_code}`)
+    onDialogChanged()
+  } catch (e) {
+    ElMessage.error('同步失败: ' + (e as Error).message)
+  } finally {
+    syncingRj.value = ''
   }
 }
 

@@ -6,6 +6,7 @@ import { getCoverDir } from '../settings.js'
 import { fetchWorkMeta } from '../dlsite/index.js'
 import { downloadToFile } from '../dlsite/client.js'
 import type { DlsiteMeta, DlsiteTag } from '../dlsite/types.js'
+import { CUSTOM_TAG } from './hidden.js'
 
 const AUDIO_EXTS = new Set(['mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'opus', 'wma', 'aiff'])
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'mkv', 'mov', 'avi', 'm4v', 'ts'])
@@ -175,6 +176,39 @@ async function refreshMetadata(db: DatabaseSync, workId: number, rj: string): Pr
   setTags(db, workId, meta.tags || [])
 }
 
+/**
+ * 手动同步单个作品：始终从 DLsite（缺失时 HVDB）重抓元数据与封面并覆盖当前信息。
+ * 保留用户手动添加的自定义标签；作品为手动封面（cover_modified=1）时不覆盖封面。
+ */
+export async function syncWork(db: DatabaseSync, workId: number, rj: string): Promise<void> {
+  const meta = await fetchWorkMeta(rj)
+  const row = db.prepare('SELECT cover_path, cover_modified FROM works WHERE id = ?').get(workId) as
+    | { cover_path: string; cover_modified: number }
+    | undefined
+  let coverPath = row?.cover_path || ''
+  if (meta.cover_url && !(row?.cover_modified)) {
+    try {
+      coverPath = await saveCover(rj, meta.cover_url)
+    } catch (e) {
+      console.warn(`[dlsite] ${rj} cover download failed: ${(e as Error).message}`)
+    }
+  }
+  db.prepare(
+    `UPDATE works SET title = ?, circle = ?, release_date = ?, series = ?, sales_count = ?, cover_path = ?, updated_at = ? WHERE id = ?`
+  ).run(
+    meta.title || '',
+    meta.circle || '',
+    meta.release_date || '',
+    meta.series || '',
+    meta.sales_count ?? null,
+    coverPath,
+    new Date().toISOString(),
+    workId
+  )
+  setActors(db, workId, meta.actors || [])
+  setTags(db, workId, meta.tags || [])
+}
+
 function setActors(db: DatabaseSync, workId: number, names: string[]): void {
   db.prepare('DELETE FROM work_actors WHERE work_id = ?').run(workId)
   const insertActor = db.prepare('INSERT OR IGNORE INTO actors (name) VALUES (?)')
@@ -192,7 +226,13 @@ function setActors(db: DatabaseSync, workId: number, names: string[]): void {
 }
 
 function setTags(db: DatabaseSync, workId: number, tags: DlsiteTag[]): void {
-  db.prepare('DELETE FROM work_tags WHERE work_id = ?').run(workId)
+  // 只重建原生标签（DLsite/HVDB），保留用户手动添加的自定义标签
+  db.prepare(
+    `DELETE FROM work_tags WHERE work_id = ? AND tag_id IN (
+       SELECT wt.tag_id FROM work_tags wt JOIN tags t ON t.id = wt.tag_id
+       WHERE wt.work_id = ? AND t.category != ?
+     )`
+  ).run(workId, workId, CUSTOM_TAG)
   const insertTag = db.prepare('INSERT OR IGNORE INTO tags (name, category) VALUES (?, ?)')
   const getTag = db.prepare('SELECT id FROM tags WHERE name = ? AND category = ?')
   const link = db.prepare('INSERT OR IGNORE INTO work_tags (work_id, tag_id) VALUES (?, ?)')
