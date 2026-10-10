@@ -320,6 +320,8 @@ function fmt(t: number): string {
 .fs-bg {
   position: absolute;
   inset: -48px;
+  /* 与整站同理：钉死高度，避免软键盘/地址栏改变视口高度时取景跳动 */
+  height: calc(100vh + 96px);
   z-index: 0;
   background-image: var(--wallpaper-image);
   background-size: cover;
