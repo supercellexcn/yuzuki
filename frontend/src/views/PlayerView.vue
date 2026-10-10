@@ -80,7 +80,7 @@
         :rj="work.rj_code"
         :work="work"
         @open-image="openImage"
-        @set-cover="onSetCover"
+        @image-longpress="openImageActions"
       />
 
       <template v-if="recommendationEnabled">
@@ -105,11 +105,22 @@
       </template>
     </template>
 
+    <!-- 长按文件列表里的图片 → 选择要执行的动作 -->
+    <div v-if="actionTarget" class="sheet-mask" @click.self="actionTarget = null">
+      <div class="sheet">
+        <div class="sheet-title" :title="actionTarget.filename">{{ actionTarget.filename }}</div>
+        <ImageActions vertical @pick="runImageAction" />
+        <button class="sheet-cancel" type="button" @click="actionTarget = null">取消</button>
+      </div>
+    </div>
+
     <ImageViewer
-      :urls="imageUrls"
+      :rj="rj"
+      :files="imageFiles"
       :index="imageIndex"
       @update:index="(v) => (imageIndex = v)"
-      @close="imageUrls = []"
+      @close="imageFiles = []"
+      @changed="refreshCover"
     />
   </div>
 </template>
@@ -117,16 +128,17 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { getWork, mediaUrl, authedUrl, setWorkCover, getRecommendations } from '../api'
+import { getWork, authedUrl, getRecommendations } from '../api'
 import { CUSTOM_TAG } from '../api/types'
 import type { WorkDetail, MediaFile, RecommendationItem } from '../api/types'
 import { useLibraryStore } from '../stores/library'
 import { usePlayerStore } from '../stores/player'
 import { useSettingsStore } from '../stores/settings'
 import { useFavorite } from '../composables/useFavorite'
+import { useImageActions, type ImageActionKind } from '../composables/useImageActions'
 import FileList from '../components/FileList.vue'
 import ImageViewer from '../components/ImageViewer.vue'
+import ImageActions from '../components/ImageActions.vue'
 import WorkCard from '../components/WorkCard.vue'
 
 const route = useRoute()
@@ -135,11 +147,12 @@ const library = useLibraryStore()
 const player = usePlayerStore()
 const settingsStore = useSettingsStore()
 const { fav } = useFavorite()
+const { run: runImageActionRaw } = useImageActions()
 
 const work = ref<WorkDetail | null>(null)
 const loading = ref(true)
-// 图片查看器：当前作品所有图片的 URL 列表 + 正在看的下标（支持上一张/下一张）
-const imageUrls = ref<string[]>([])
+// 图片查看器：当前作品「同一目录」的图片列表 + 正在看的下标（支持上一张/下一张）
+const imageFiles = ref<MediaFile[]>([])
 const imageIndex = ref(0)
 const recommendations = ref<RecommendationItem[]>([])
 const recommendationsLoading = ref(false)
@@ -228,29 +241,29 @@ function openImage(f: MediaFile) {
     (x) => x.is_dir !== 1 && x.kind === 'image' && dirOf(x) === dir
   )
   const idx = list.findIndex((x) => x.id === f.id)
-  imageUrls.value = list.map((x) => mediaUrl(rj.value, x.id))
+  imageFiles.value = list
   imageIndex.value = idx >= 0 ? idx : 0
 }
 
-/** 长按图片文件 → 设为该作品封面 */
-async function onSetCover(f: MediaFile) {
-  try {
-    await ElMessageBox.confirm(
-      `将「${f.filename}」设为当前作品的封面？`,
-      '设为封面',
-      { type: 'warning', confirmButtonText: '设为封面', cancelButtonText: '取消' }
-    )
-  } catch {
-    return // 用户取消
-  }
-  try {
-    await setWorkCover(rj.value, f.id)
-    // 缓存击穿：给封面 URL 加时间戳，让页面上的封面立即刷新
-    if (work.value) work.value.cover_url = `/api/cover/${rj.value}?v=${Date.now()}`
-    ElMessage.success('已设为封面')
-  } catch (e) {
-    ElMessage.error('设置封面失败: ' + (e as Error).message)
-  }
+// ---- 图片动作：设为封面 / 桌面壁纸 / 移动壁纸 ----
+/** 长按图片时待选的动作目标 */
+const actionTarget = ref<MediaFile | null>(null)
+
+function openImageActions(f: MediaFile) {
+  actionTarget.value = f
+}
+
+/** 动作改动后给封面 URL 加时间戳，让页面上的封面立即刷新（缓存击穿）。 */
+function refreshCover() {
+  if (work.value) work.value.cover_url = `/api/cover/${work.value.rj_code}?v=${Date.now()}`
+}
+
+/** 长按弹出层里选中动作后执行，随后刷新封面。 */
+async function runImageAction(kind: ImageActionKind) {
+  const f = actionTarget.value
+  actionTarget.value = null
+  if (!f || !work.value) return
+  if (await runImageActionRaw(kind, work.value.rj_code, f)) refreshCover()
 }
 
 /**
@@ -472,5 +485,49 @@ function onRecPointerDown(e: PointerEvent) {
   .cover {
     width: 160px;
   }
+}
+/* 长按图片 → 底部弹层选择动作 */
+.sheet-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.sheet {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px 20px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+  backdrop-filter: blur(var(--card-blur));
+}
+.sheet-title {
+  font-size: 14px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sheet-cancel {
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.sheet-cancel:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }
 </style>

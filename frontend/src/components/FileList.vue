@@ -7,7 +7,7 @@
       :class="{ dir: f.is_dir === 1, playing: isCurrent(f) }"
       :style="{ paddingLeft: 12 + depth(f) * 20 + 'px' }"
       @click="onClick(f)"
-      v-longpress="f.is_dir !== 1 && f.kind === 'image' ? () => emit('set-cover', f) : undefined"
+      v-longpress="f.is_dir !== 1 && f.kind === 'image' ? () => emit('image-longpress', f) : undefined"
     >
       <span class="kind">
         <template v-if="f.is_dir === 1">{{ expanded.has(f.rel_path) ? '▾' : '▸' }}</template>
@@ -31,7 +31,8 @@ import { useIsMobile } from '../composables/useIsMobile'
 const props = defineProps<{ files: MediaFile[]; rj: string; work?: Work | null }>()
 const emit = defineEmits<{
   (e: 'open-image', f: MediaFile): void
-  (e: 'set-cover', f: MediaFile): void
+  /** 长按图片：由父级弹出「设为封面 / 桌面壁纸 / 移动壁纸」选择 */
+  (e: 'image-longpress', f: MediaFile): void
 }>()
 const isMobile = useIsMobile()
 
