@@ -129,7 +129,8 @@ onMounted(async () => {
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  /* 与媒体库一致：卡片尺寸由设置决定 */
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
   gap: 16px;
 }
 .chips {
@@ -142,22 +143,25 @@ onMounted(async () => {
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  border-radius: 14px;
-  background: #262b33;
+  border-radius: 16px;
+  /* 半透明 + 磨砂，与全站控件一致 */
+  background: rgba(38, 43, 51, 0.7);
   color: #d3d9e3;
   font-size: 14px;
   cursor: pointer;
   border: 1px solid transparent;
   transition: all 0.12s;
   user-select: none;
+  backdrop-filter: blur(var(--control-blur));
 }
 .chip:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
+/* 声优标签与详情页 / 卡片保持同一套配色 */
 .chip-actor {
-  background: #2a3040;
-  color: #9db8e6;
+  background: var(--tag-actor-bg);
+  color: var(--tag-actor-fg);
 }
 /* 自定义标签（category === 'custom'）：与原生标签颜色区分 */
 .chip.chip-custom {

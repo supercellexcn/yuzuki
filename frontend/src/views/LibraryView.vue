@@ -3,13 +3,26 @@
     <!-- 工具栏 -->
     <div class="toolbar">
       <SearchBar :model-value="store.q" @search="store.setQuery" />
-      <el-select v-model="sort" size="large" style="width: 150px" @change="onSortChange">
-        <el-option v-for="o in SORT_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
-      </el-select>
-      <el-select v-model="order" size="large" style="width: 92px" @change="store.setOrder">
-        <el-option value="desc" label="降序" />
-        <el-option value="asc" label="升序" />
-      </el-select>
+      <!-- 排序：指标用分段选择（入库 / 发售 / 销量），升降序用开关（左升序 / 右降序） -->
+      <div class="sort-ctrl">
+        <el-radio-group v-model="sort" size="large" @change="onSortChange">
+          <el-radio-button v-for="o in SORT_OPTIONS" :key="o.value" :value="o.value">
+            {{ o.label }}
+          </el-radio-button>
+        </el-radio-group>
+        <!-- 升序 / 降序：拨左=升序、拨右=降序，圆钮上直接显示当前状态 -->
+        <button
+          class="order-switch"
+          :class="{ desc: order === 'desc' }"
+          type="button"
+          role="switch"
+          :aria-checked="order === 'desc'"
+          :title="order === 'desc' ? '当前降序，点击切换为升序' : '当前升序，点击切换为降序'"
+          @click="toggleOrder"
+        >
+          <span class="knob">{{ order === 'desc' ? '降' : '升' }}</span>
+        </button>
+      </div>
       <el-button
         size="large"
         :loading="store.randomLoading"
@@ -98,6 +111,7 @@
         v-for="w in displayItems"
         :key="w.id"
         :work="w"
+        :highlight="w.id === highlightWorkId"
         @select-circle="(v) => addCond('circle', v)"
         @select-series="(v) => addCond('series', v)"
         @select-actor="(v) => addCond('actor', v)"
@@ -138,6 +152,8 @@ const tags = ref<TagCount[]>([])
 const recentPlays = ref<PlayRecord[]>([])
 const gridRef = ref<HTMLElement | null>(null)
 const recentRef = ref<HTMLElement | null>(null)
+/** 自动定位到的上次浏览作品（用导航栏颜色描边标识） */
+const highlightWorkId = ref<number | null>(null)
 
 const displayItems = computed(() => (store.randomMode ? store.randomItems : store.items))
 
@@ -154,8 +170,14 @@ function typeLabel(t: FilterCondType): string {
 function tagType(t: FilterCondType): 'success' | 'primary' | 'warning' | 'info' {
   return t === 'circle' ? 'success' : t === 'series' ? 'primary' : t === 'actor' ? 'warning' : 'info'
 }
-function onSortChange(v: SortKey) {
-  store.setSort(v)
+/** 分段选择切换排序指标（事件值类型较宽，这里收窄回 SortKey）。 */
+function onSortChange(v: string | number | boolean) {
+  const key = String(v)
+  if (key === 'added' || key === 'release' || key === 'sales') store.setSort(key)
+}
+/** 升序 / 降序开关：拨左升序、拨右降序。 */
+function toggleOrder() {
+  store.setOrder(store.order === 'desc' ? 'asc' : 'desc')
 }
 function goWork(rj: string) {
   router.push({ name: 'player', params: { rj } })
@@ -354,6 +376,8 @@ async function restorePosition() {
   if (el) {
     el.scrollIntoView({ block: 'start' })
     window.scrollBy(0, -16)
+    // 命中后给该卡片加描边，让用户一眼看到「跳到了哪里」
+    highlightWorkId.value = lastId
   }
 }
 
@@ -390,11 +414,87 @@ watch(
   color: var(--muted);
   font-size: 14px;
 }
+/* 排序指标 + 升降序开关，窄屏时可整体换行 */
+.sort-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+/*
+ * 升序 / 降序开关：胶囊外形 + 圆形按钮，圆钮上直接显示「升 / 降」。
+ * Element Plus 的 el-switch 只能把文字放在轨道里、做不出圆钮内文字，所以这里自绘。
+ * 拨到左边 = 升序，右边 = 降序（位置与钮内文字都随当前状态变化）。
+ */
+.order-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 58px;
+  height: 30px;
+  padding: 0;
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s, filter 0.18s;
+}
+.order-switch:hover {
+  filter: brightness(1.15);
+}
+.order-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.order-switch .knob {
+  position: absolute;
+  top: 50%;
+  left: 1px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+  transition: left 0.18s ease;
+}
+.order-switch.desc .knob {
+  left: calc(100% - 25px);
+}
 .menus {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   flex-wrap: wrap;
+}
+/*
+ * Element Plus 会给相邻的 .el-button 加 margin-left: 12px。筛选菜单的按钮由
+ * FilterMenu 子组件渲染，不带本组件的作用域属性，普通后代选择器匹配不到它们
+ * （只有「我的收藏」这类本模板里的按钮能匹配），于是间距会一大一小。
+ * 用 :deep() 穿透到子组件，统一交给容器的 gap 控制。
+ */
+.menus :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+/*
+ * 移动端：换成两列等宽网格，筛选按钮与「我的收藏」左右都对齐，
+ * 不再出现换行后参差不齐的情况。
+ */
+@media (max-width: 760px) {
+  .menus {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .menus :deep(.el-button) {
+    width: 100%;
+  }
 }
 .active-conds {
   display: flex;
@@ -471,7 +571,8 @@ watch(
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  /* 卡片尺寸由设置决定（--card-min-width 由 useAppearance 写入） */
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
   gap: 16px;
 }
 .empty {

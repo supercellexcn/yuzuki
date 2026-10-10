@@ -74,6 +74,12 @@ export interface CoverJob {
   finishedAt: string | null
 }
 
+/** 作品卡片尺寸：小 / 中 / 大 / 自定义宽度。 */
+export type CardSize = 'small' | 'medium' | 'large' | 'custom'
+
+/** 壁纸类型：桌面端 / 移动端各一张。 */
+export type WallpaperKind = 'desktop' | 'mobile'
+
 export interface AppSettings {
   source_paths: string[]
   scan_depth: number
@@ -103,6 +109,18 @@ export interface AppSettings {
   recommendation_series_priority_enabled: boolean
   recommendation_series_max_count: number
   recommendation_series_bypass_min_score: boolean
+  // ---- 外观 / 壁纸 / 主题配色（全局共享）----
+  wallpaper_blur: number
+  card_blur: number
+  filelist_blur: number
+  control_blur: number
+  card_size: CardSize
+  card_width: number
+  theme_color_nav: string
+  theme_color_actor: string
+  theme_color_tag: string
+  /** 声优 / 类型标签的不透明度（1-100，越小越透） */
+  tag_opacity: number
 }
 
 export interface TagCount {

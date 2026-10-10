@@ -166,13 +166,15 @@ function close() {
   gap: 6px;
   padding: 7px 13px;
   border-radius: 16px;
-  background: #262b33;
+  /* 半透明 + 磨砂，与全站控件一致 */
+  background: rgba(38, 43, 51, 0.7);
   color: #d3d9e3;
   font-size: 14px;
   cursor: pointer;
   border: 1px solid transparent;
   transition: all 0.12s;
   user-select: none;
+  backdrop-filter: blur(var(--control-blur));
 }
 .fp-chip:active {
   transform: scale(0.96);
@@ -195,7 +197,7 @@ function close() {
   background: #7bd88f;
 }
 .dot.actor {
-  background: #9db8e6;
+  background: var(--tag-actor-bg);
 }
 .dot.tag {
   background: #c3cbd7;

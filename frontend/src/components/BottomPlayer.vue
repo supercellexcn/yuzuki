@@ -111,7 +111,9 @@ function fmt(t: number): string {
   bottom: 0;
   left: 0;
   right: 0;
-  background: #1b1e24;
+  /* 与全站一致：半透明 + 磨砂，主按钮/悬停框线跟随主题色（--accent） */
+  background: var(--panel);
+  backdrop-filter: blur(var(--card-blur));
   border-top: 1px solid var(--border);
   z-index: 200;
   display: grid;
@@ -198,7 +200,7 @@ function fmt(t: number): string {
 }
 .ctrl.active {
   border-color: var(--accent);
-  background: #22314a;
+  background: var(--accent-soft);
   color: var(--accent);
 }
 .btn {
@@ -224,7 +226,7 @@ function fmt(t: number): string {
   height: 44px;
   background: var(--accent);
   border-color: var(--accent);
-  color: #0b0e12;
+  color: var(--accent-fg);
   font-size: 15px;
 }
 .btn.main:hover {
@@ -277,7 +279,7 @@ function fmt(t: number): string {
     height: 40px;
     background: var(--accent);
     border-color: var(--accent);
-    color: #0b0e12;
+    color: var(--accent-fg);
     font-size: 15px;
     justify-self: end;
   }

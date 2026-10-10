@@ -1,19 +1,33 @@
 <template>
   <Teleport to="body">
-    <div v-if="player.fullscreenVisible" class="fs-player" :class="{ closing }" :style="dragStyle">
-      <!-- 顶部下拉把手 + 封面都可按住下滑退出 -->
-      <div class="fs-handle" @pointerdown="(e) => startDrag(e, 'handle')">
+    <div
+      v-if="player.fullscreenVisible"
+      class="fs-player"
+      :class="{ closing }"
+      :style="dragStyle"
+      @pointerdown="startDrag"
+      @click.capture="onClickCapture"
+    >
+      <!--
+        背景：播放器自带一层「与整站同一张」的壁纸。
+        不能靠让本层透明去透出背后的壁纸 —— 那样背后的媒体库界面（卡片/导航栏）也会一起透出来。
+      -->
+      <div class="fs-bg" aria-hidden="true" />
+      <div class="fs-scrim" aria-hidden="true" />
+
+      <!-- 顶部下拉把手 + 封面、信息区都可按住下滑退出（统一由根节点接管 pointerdown） -->
+      <div class="fs-handle">
         <span class="fs-grabber" />
       </div>
 
-      <!-- 大封面：正常摆放、背景统一无黑边；按住下滑退出，轻触切换播放/暂停 -->
-      <div class="fs-cover" @pointerdown="(e) => startDrag(e, 'cover')" @click="onCoverClick">
+      <!-- 大封面：正常摆放、背景统一无黑边；按住下滑退出（轻触封面不做播放/暂停） -->
+      <div class="fs-cover">
         <img v-if="coverUrl" :src="coverUrl" :alt="player.fullscreenWork?.title || ''" class="fs-main" />
         <div v-else class="fs-no-cover">{{ player.fullscreenRj }}</div>
-        <div v-if="!inThisWork" class="tap-hint">▶ 轻触封面开始播放</div>
+        <div v-if="!inThisWork" class="tap-hint">▶ 点下方播放键开始播放</div>
       </div>
 
-      <!-- 作品信息：社团 / 声优 / 类型标签（点击跳转到媒体库并套用筛选） -->
+      <!-- 作品信息：社团 / 声优 / 类型标签（点击跳转到媒体库并套用筛选）；此区域也可按住下滑退出 -->
       <div class="fs-info" v-if="workTitle || circle || actors.length || tags.length">
         <div class="fs-title">{{ workTitle }}</div>
         <div class="fs-meta-row clickable" v-if="circle" @click="goFilter('circle', circle)">
@@ -117,7 +131,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePlayerStore } from '../stores/player'
 import { useSettingsStore } from '../stores/settings'
@@ -169,13 +183,19 @@ const DRAG_CLOSE_THRESHOLD = 100
 const dragDy = ref(0)
 const dragging = ref(false)
 const closing = ref(false)
+/** 刚发生过拖动：用来吞掉紧随其后的 click，避免误触信息区里的标签 */
 const swallowClick = ref(false)
 const dragStyle = computed(() =>
   dragging.value ? { transform: `translateY(${dragDy.value}px)`, transition: 'none' } : {}
 )
 
-function startDrag(e: PointerEvent, source: 'handle' | 'cover') {
+/** 交互控件区域不参与下拉关闭（按钮 / 滑块 / 播放列表）。 */
+const NO_DRAG_SELECTOR = '.fs-controls, .pl-panel, button, .el-slider'
+
+function startDrag(e: PointerEvent) {
   if (e.button !== 0) return
+  // 从按钮、滑块、播放列表上按下时不进入下拉关闭，避免抢掉控件的操作
+  if ((e.target as HTMLElement | null)?.closest(NO_DRAG_SELECTOR)) return
   dragging.value = true
   const startY = e.clientY
   let dragged = false
@@ -187,39 +207,37 @@ function startDrag(e: PointerEvent, source: 'handle' | 'cover') {
       dragging.value = true
     }
   }
-  const onUp = () => {
+  const finish = (allowClose: boolean) => {
     window.removeEventListener('pointermove', onMove)
     window.removeEventListener('pointerup', onUp)
+    window.removeEventListener('pointercancel', onCancel)
     if (dragged) {
-      // 仅封面拖动才吞 click（封面有 @click 播放切换）；把手没有 click 处理器不需要吞
-      if (source === 'cover') {
-        swallowClick.value = true
-        // 触屏拖动后浏览器通常不派发 click，标志会残留 → 定时复位
-        setTimeout(() => {
-          swallowClick.value = false
-        }, 300)
-      }
-      if (dragDy.value > DRAG_CLOSE_THRESHOLD) closeWithAnimation()
-      else {
-        dragging.value = false
-        dragDy.value = 0
-      }
+      // 拖动结束时吞掉随之而来的 click，避免误触信息区里的标签/社团跳转
+      swallowClick.value = true
+      setTimeout(() => {
+        swallowClick.value = false
+      }, 300)
+    }
+    if (allowClose && dragged && dragDy.value > DRAG_CLOSE_THRESHOLD) {
+      closeWithAnimation()
     } else {
       dragging.value = false
       dragDy.value = 0
     }
   }
+  const onUp = () => finish(true)
+  // 手势被系统打断（例如触碰边缘触发系统返回）：不继续拖动，直接复位
+  const onCancel = () => finish(false)
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
+  window.addEventListener('pointercancel', onCancel)
 }
 
-/** 轻触封面：切换播放/暂停（若被拖动判定则忽略）。 */
-function onCoverClick() {
-  if (swallowClick.value) {
-    swallowClick.value = false
-    return
-  }
-  player.playFirstOrToggle(playableFiles.value)
+/** 捕获阶段拦截：刚拖动过就吞掉 click（pointerup 与 click 同帧先后触发）。 */
+function onClickCapture(e: MouseEvent) {
+  if (!swallowClick.value) return
+  e.stopPropagation()
+  e.preventDefault()
 }
 
 /** 先移除内联 transform（让出过渡动画），再套 closing 类从当前位置滑出屏幕。 */
@@ -240,6 +258,17 @@ function onToggleFav() {
 onMounted(() => {
   if (!settings.settings) settings.load().catch(() => {})
 })
+
+/**
+ * 全屏播放器打开时锁住底层页面滚动。
+ * 否则播放器下方的空白区域触摸滑动会「穿透」去滚动背后的媒体库列表。
+ */
+watch(
+  () => player.fullscreenVisible,
+  (visible) => document.documentElement.classList.toggle('fs-open', visible),
+  { immediate: true }
+)
+onUnmounted(() => document.documentElement.classList.remove('fs-open'))
 
 function onSeek(v: number | number[]) {
   player.seek(Array.isArray(v) ? v[0] : v)
@@ -279,11 +308,38 @@ function fmt(t: number): string {
 .fs-player {
   position: fixed;
   inset: 0;
+  /* 不透明底：保证背后的媒体库界面不会透出来（壁纸由 .fs-bg 自己铺） */
   background: var(--bg);
   z-index: 300;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   transition: transform 0.18s ease;
+}
+/* 自带壁纸层：做法与整站 body::before 一致，外扩一圈避免模糊后边缘露底 */
+.fs-bg {
+  position: absolute;
+  inset: -48px;
+  z-index: 0;
+  background-image: var(--wallpaper-image);
+  background-size: cover;
+  background-position: center;
+  filter: blur(var(--wallpaper-blur));
+  pointer-events: none;
+}
+/* 顶/底压暗一层，保证标题与控件文字可读，中间留给封面 */
+.fs-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.45),
+    rgba(0, 0, 0, 0) 22%,
+    rgba(0, 0, 0, 0) 58%,
+    rgba(0, 0, 0, 0.5)
+  );
 }
 .fs-player.closing {
   transform: translateY(100vh);
@@ -297,6 +353,9 @@ function fmt(t: number): string {
   justify-content: center;
   cursor: grab;
   touch-action: none;
+  /* 压在 .fs-bg / .fs-scrim 之上 */
+  position: relative;
+  z-index: 1;
 }
 .fs-handle:active {
   cursor: grabbing;
@@ -311,6 +370,7 @@ function fmt(t: number): string {
 /* 大封面：正常摆放，背景与整页一致，无黑边 */
 .fs-cover {
   position: relative;
+  z-index: 1;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -349,6 +409,10 @@ function fmt(t: number): string {
   flex-direction: column;
   gap: 6px;
   padding: 4px 20px 10px;
+  /* 交给我们的下拉关闭手势处理，别让浏览器把它当成原生滚动 */
+  touch-action: none;
+  position: relative;
+  z-index: 1;
 }
 .fs-title {
   font-size: 16px;
@@ -379,14 +443,16 @@ function fmt(t: number): string {
 }
 .fs-chip {
   font-size: 12px;
-  padding: 3px 9px;
-  border-radius: 10px;
-  background: #262b33;
-  color: #c3cbd7;
+  padding: 3px 10px;
+  border-radius: 999px;
+  /* 与媒体库卡片 / 详情页同一套「类型标签」配色（可在设置里改） */
+  background: var(--tag-genre-bg);
+  color: var(--tag-genre-fg);
+  backdrop-filter: blur(var(--control-blur));
 }
 .fs-chip.chip-actor {
-  background: #2a3040;
-  color: #9db8e6;
+  background: var(--tag-actor-bg);
+  color: var(--tag-actor-fg);
 }
 .clickable {
   cursor: pointer;
@@ -396,7 +462,7 @@ function fmt(t: number): string {
 }
 .fs-chip.clickable:hover {
   background: var(--accent);
-  color: #0b0e12;
+  color: var(--accent-fg);
 }
 /* 控件：整体靠下 */
 .fs-controls {
@@ -405,6 +471,8 @@ function fmt(t: number): string {
   flex-direction: column;
   gap: 12px;
   padding: 10px 20px 26px;
+  position: relative;
+  z-index: 1;
 }
 .fs-row {
   display: flex;
@@ -455,13 +523,13 @@ function fmt(t: number): string {
 }
 .fbtn.active {
   border-color: var(--accent);
-  background: #22314a;
+  background: var(--accent-soft);
   color: var(--accent);
 }
 .fbtn.main {
   background: var(--accent);
   border-color: var(--accent);
-  color: #0b0e12;
+  color: var(--accent-fg);
   width: 46px;
   height: 46px;
 }
@@ -483,7 +551,8 @@ function fmt(t: number): string {
   right: 0;
   bottom: 0;
   height: 55%;
-  background: #1b1e24;
+  background: var(--panel);
+  backdrop-filter: blur(var(--card-blur));
   border-top: 1px solid var(--border);
   border-radius: 12px 12px 0 0;
   display: flex;
@@ -523,10 +592,10 @@ function fmt(t: number): string {
   font-size: 14px;
 }
 .pl-item:hover {
-  background: #22262d;
+  background: rgba(34, 38, 45, 0.65);
 }
 .pl-item.playing {
-  background: #1e2b3d;
+  background: var(--accent-soft);
   color: var(--accent);
 }
 .pl-kind {

@@ -27,6 +27,7 @@ import type {
   AdminSeries,
   AdminTagFilter,
   HiddenType,
+  WallpaperKind,
 } from './types'
 
 const TOKEN_KEY = 'yuzuki_token'
@@ -151,6 +152,39 @@ export async function checkDefaultCover(): Promise<boolean> {
 /** 默认封面预览 URL（带 token）。 */
 export function defaultCoverUrl(): string {
   return authedUrl('/api/settings/default-cover')
+}
+
+// ---- 壁纸（桌面端 / 移动端分别上传）----
+/** 上传壁纸（base64 图片数据 + 扩展名，≤10MB）。 */
+export async function uploadWallpaper(
+  kind: WallpaperKind,
+  data: string,
+  ext: string
+): Promise<{ ok: boolean; ext: string }> {
+  const { data: res } = await http.post(`/settings/wallpaper/${kind}`, { data, ext })
+  return res
+}
+
+export async function removeWallpaper(kind: WallpaperKind): Promise<{ ok: boolean }> {
+  const { data } = await http.delete(`/settings/wallpaper/${kind}`)
+  return data
+}
+
+/** 指定端是否已上传壁纸（HEAD 探测，不下载图片内容）。 */
+export async function checkWallpaper(kind: WallpaperKind): Promise<boolean> {
+  try {
+    await http.head(`/settings/wallpaper/${kind}`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** 壁纸图片 URL（带 token）；v 为破缓存的时间戳。 */
+export function wallpaperUrl(kind: WallpaperKind, v?: number): string {
+  const base = authedUrl(`/api/settings/wallpaper/${kind}`)
+  if (!v) return base
+  return `${base}${base.includes('?') ? '&' : '?'}v=${v}`
 }
 
 export async function startScan(): Promise<{ ok: boolean }> {

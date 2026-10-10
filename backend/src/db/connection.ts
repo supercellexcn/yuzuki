@@ -200,6 +200,9 @@ function migrate(d: DatabaseSync): void {
   )
   d.exec("DELETE FROM play_counts WHERE rj_code = ''")
 
+  // 已废弃的设置项：作品卡片下半部分颜色（现由统一主题色 theme_color_nav 决定）
+  d.exec("DELETE FROM settings WHERE key = 'theme_color_card'")
+
   // 推荐算法 v2.0：检测到旧版本推荐数据（v1.x）时，清空推荐结果并重置推荐配置。
   // 只触发一次——下次计算写入的 algorithm_version 就是 v2.0，之后启动不再进入。
   const staleRec = (

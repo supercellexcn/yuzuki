@@ -125,7 +125,7 @@ function fmtTime(t: string): string {
   border-bottom: none;
 }
 .row:hover {
-  background: #22262d;
+  background: rgba(34, 38, 45, 0.65);
 }
 .cover {
   width: 44px;

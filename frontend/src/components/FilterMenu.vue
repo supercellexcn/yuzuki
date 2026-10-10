@@ -92,26 +92,28 @@ function onFav(it: { name: string; category?: string }) {
   align-items: center;
   gap: 5px;
   padding: 4px 11px;
-  border-radius: 12px;
-  background: #262b33;
+  border-radius: 14px;
+  /* 半透明 + 磨砂，与全站控件一致 */
+  background: rgba(38, 43, 51, 0.7);
   color: #d3d9e3;
   font-size: 14px;
   cursor: pointer;
   border: 1px solid transparent;
   transition: all 0.12s;
   user-select: none;
+  backdrop-filter: blur(var(--control-blur));
 }
 .chip:hover {
   border-color: var(--accent);
 }
 .chip.active {
-  background: #22314a;
+  background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
 }
 /* 自定义标签：与 DLsite/hvdb 原生标签颜色区分 */
 .chip.chip-custom:not(.active) {
-  background: #1d3a33;
+  background: rgba(29, 58, 51, 0.78);
   border-color: #2a5a4d;
   color: #8ee0c0;
 }
