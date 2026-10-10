@@ -1,7 +1,16 @@
 import { defineStore } from 'pinia'
 import type { MediaFile, Work } from '../api/types'
-import { mediaUrl, recordPlay } from '../api'
+import { authedUrl, mediaUrl, recordPlay } from '../api'
 import { useLibraryStore } from './library'
+import { useSettingsStore } from './settings'
+
+/** 浏览器是否支持 Media Session（锁屏 / 通知栏媒体卡片）。 */
+function mediaSessionSupported(): boolean {
+  return typeof navigator !== 'undefined' && 'mediaSession' in navigator
+}
+
+/** 上一次同步锁屏进度的时间，用于节流（非响应式，无需进 state）。 */
+let lastPositionSyncAt = 0
 
 interface PlayItem {
   rj: string
@@ -25,6 +34,8 @@ export const usePlayerStore = defineStore('player', {
     fullscreenRj: '',
     fullscreenWork: null as Work | null,
     fullscreenFiles: [] as MediaFile[],
+    /** Media Session 动作处理器只需注册一次 */
+    mediaSessionReady: false,
   }),
   actions: {
     ensureAudio() {
@@ -32,10 +43,27 @@ export const usePlayerStore = defineStore('player', {
         const a = new Audio()
         a.preload = 'metadata'
         a.loop = this.loop
-        a.addEventListener('timeupdate', () => (this.currentTime = a.currentTime))
-        a.addEventListener('durationchange', () => (this.duration = a.duration || 0))
-        a.addEventListener('play', () => (this.playing = true))
-        a.addEventListener('pause', () => (this.playing = false))
+        a.addEventListener('timeupdate', () => {
+          this.currentTime = a.currentTime
+          // 锁屏进度条：节流到约 1 秒一次，避免每个 timeupdate 都写
+          const now = Date.now()
+          if (now - lastPositionSyncAt > 900) {
+            lastPositionSyncAt = now
+            this.syncPositionState()
+          }
+        })
+        a.addEventListener('durationchange', () => {
+          this.duration = a.duration || 0
+          this.syncPositionState()
+        })
+        a.addEventListener('play', () => {
+          this.playing = true
+          this.setMediaPlaybackState('playing')
+        })
+        a.addEventListener('pause', () => {
+          this.playing = false
+          this.setMediaPlaybackState('paused')
+        })
         a.addEventListener('ended', () => {
           this.playing = false
           // 播完当前文件自动播放下一个（队列为空或已是最后一个则 next() 内部直接返回）
@@ -44,6 +72,7 @@ export const usePlayerStore = defineStore('player', {
         a.addEventListener('error', () => (this.playing = false))
         a.volume = this.volume
         this.audio = a
+        this.initMediaSession()
       }
       return this.audio
     },
@@ -61,6 +90,7 @@ export const usePlayerStore = defineStore('player', {
       // 保留已加载的作品信息，避免封面/标题一闪而空
       const keepWork = work || (this.current?.rj === rj ? this.current.work : null)
       this.current = { rj, file, work: keepWork, url }
+      this.updateMediaMetadata(rj, file, keepWork)
       a.src = url
       a.play()
       this.record(rj, file.id)
@@ -117,6 +147,95 @@ export const usePlayerStore = defineStore('player', {
       this.playing = false
       this.currentTime = 0
       this.duration = 0
+      // 顺带收掉锁屏/通知栏的媒体卡片
+      if (mediaSessionSupported()) {
+        navigator.mediaSession.metadata = null
+        navigator.mediaSession.playbackState = 'none'
+      }
+    },
+    // ---- Media Session：锁屏 / 通知栏媒体卡片与耳机按键 ----
+    /**
+     * 注册系统媒体会话。它负责「元数据 + 控制入口」，
+     * 让系统把网页播放当成正式媒体会话处理（锁屏卡片、线控/蓝牙按键）。
+     * 注意：它不能阻止系统省电策略杀进程，息屏续播仍取决于 ROM 是否放行。
+     */
+    initMediaSession() {
+      if (this.mediaSessionReady || !mediaSessionSupported()) return
+      this.mediaSessionReady = true
+      const ms = navigator.mediaSession
+      /** 浏览器对不支持的动作会抛错，逐个兜住即可。 */
+      const on = (
+        action: MediaSessionAction,
+        handler: ((details: MediaSessionActionDetails) => void) | null
+      ) => {
+        try {
+          ms.setActionHandler(action, handler)
+        } catch {
+          /* 该动作在当前浏览器不受支持 */
+        }
+      }
+      const seekSecs = () => useSettingsStore().settings?.seek_seconds || 15
+      on('play', () => this.resume())
+      on('pause', () => this.pause())
+      on('stop', () => this.stop())
+      on('previoustrack', () => this.prev())
+      on('nexttrack', () => this.next())
+      on('seekbackward', (d) => this.seekBy(-(d.seekOffset ?? seekSecs())))
+      on('seekforward', (d) => this.seekBy(d.seekOffset ?? seekSecs()))
+      on('seekto', (d) => {
+        if (typeof d.seekTime === 'number') this.seek(d.seekTime)
+      })
+    },
+    /** 明确的「继续播放」——系统侧的 play 是确定语义，不能复用 toggle。 */
+    resume() {
+      const a = this.audio
+      if (!a || !this.current || !a.paused) return
+      a.play().catch(() => {
+        /* 自动播放被拦截等情况，忽略 */
+      })
+    },
+    /** 明确的「暂停」。 */
+    pause() {
+      this.audio?.pause()
+    },
+    setMediaPlaybackState(state: MediaSessionPlaybackState) {
+      if (!mediaSessionSupported()) return
+      navigator.mediaSession.playbackState = state
+    },
+    /** 同步锁屏进度条；duration/position 非法时会抛错，先做校验。 */
+    syncPositionState() {
+      const a = this.audio
+      if (!a || !mediaSessionSupported() || typeof navigator.mediaSession.setPositionState !== 'function') {
+        return
+      }
+      const duration = a.duration
+      const position = a.currentTime
+      // 元数据未就绪时 duration 可能是 NaN / Infinity / 0，position 也可能越界
+      if (!Number.isFinite(duration) || duration <= 0) return
+      if (!Number.isFinite(position) || position < 0) return
+      try {
+        navigator.mediaSession.setPositionState({
+          duration,
+          position: Math.min(position, duration),
+          playbackRate: a.playbackRate || 1,
+        })
+      } catch {
+        /* 进度条属于锦上添花，失败忽略 */
+      }
+    },
+    /** 更新锁屏/通知栏卡片上的标题、声优、社团与封面。 */
+    updateMediaMetadata(rj: string, file: MediaFile, work: Work | null) {
+      if (!mediaSessionSupported() || typeof MediaMetadata === 'undefined') return
+      const cover = work?.cover_url ? authedUrl(work.cover_url) : ''
+      navigator.mediaSession.metadata = new MediaMetadata({
+        // 标题用文件名（与实际播放内容一致），专辑放作品名
+        title: file.filename || work?.title || rj,
+        artist: work?.actors?.length ? work.actors.join('、') : work?.circle || '',
+        album: work?.title || rj,
+        artwork: cover
+          ? [{ src: new URL(cover, window.location.origin).href, sizes: '512x512' }]
+          : [],
+      })
     },
     // ---- 全屏播放器 ----
     /** 打开全屏播放器（不自动播放）。files 为作品的可播放队列。 */
