@@ -8,7 +8,12 @@ import {
   findDefaultCover,
   removeDefaultCover,
   invalidateDefaultCoverCache,
+  findWallpaper,
+  removeWallpaper,
+  getWallpaperDir,
+  WALLPAPER_EXTS,
 } from '../settings.js'
+import type { WallpaperKind, AppSettings } from '../settings.js'
 import { getDb } from '../db/connection.js'
 import { startRecommendationCalc } from '../scanner/jobManager.js'
 
@@ -51,6 +56,16 @@ settingsRouter.put('/', (req, res) => {
       recommendation_series_priority_enabled: body.recommendation_series_priority_enabled as boolean | undefined,
       recommendation_series_max_count: body.recommendation_series_max_count as number | undefined,
       recommendation_series_bypass_min_score: body.recommendation_series_bypass_min_score as boolean | undefined,
+      wallpaper_blur: body.wallpaper_blur as number | undefined,
+      card_blur: body.card_blur as number | undefined,
+      filelist_blur: body.filelist_blur as number | undefined,
+      control_blur: body.control_blur as number | undefined,
+      card_size: body.card_size as AppSettings['card_size'] | undefined,
+      card_width: body.card_width as number | undefined,
+      theme_color_nav: body.theme_color_nav as string | undefined,
+      theme_color_actor: body.theme_color_actor as string | undefined,
+      theme_color_tag: body.theme_color_tag as string | undefined,
+      tag_opacity: body.tag_opacity as number | undefined,
     })
     // 推荐开关从「关」切到「开」且还没有推荐结果时，立即后台计算一次
     if (!before.recommendation_enabled && next.recommendation_enabled) {
@@ -101,5 +116,60 @@ settingsRouter.post('/default-cover', (req, res) => {
 // DELETE /api/settings/default-cover —— 删除默认封面
 settingsRouter.delete('/default-cover', (_req, res) => {
   removeDefaultCover()
+  res.json({ ok: true })
+})
+
+// ---- 壁纸（桌面端 / 移动端各一张）----
+
+const MAX_WALLPAPER_BYTES = 10 * 1024 * 1024 // 10MB
+
+/** 解析并校验 :kind 路径参数。 */
+function parseKind(raw: unknown): WallpaperKind | null {
+  const k = String(raw)
+  return k === 'desktop' || k === 'mobile' ? k : null
+}
+
+// GET /api/settings/wallpaper/:kind —— 返回已上传的壁纸图片
+settingsRouter.get('/wallpaper/:kind', (req, res) => {
+  const kind = parseKind(req.params.kind)
+  if (!kind) return res.status(400).json({ error: 'invalid kind' })
+  const file = findWallpaper(kind)
+  if (!file) return res.status(404).json({ error: 'no wallpaper' })
+  res.sendFile(file, {}, (err) => {
+    if (err && !res.headersSent) res.status(404).end()
+  })
+})
+
+// POST /api/settings/wallpaper/:kind —— 上传壁纸 { data: base64, ext }，≤10MB
+settingsRouter.post('/wallpaper/:kind', (req, res) => {
+  const kind = parseKind(req.params.kind)
+  if (!kind) return res.status(400).json({ error: 'invalid kind' })
+
+  const data = String(req.body?.data || '')
+  let ext = String(req.body?.ext || '').toLowerCase().replace('.', '')
+  if (ext === 'jpeg') ext = 'jpg'
+  if (!(WALLPAPER_EXTS as readonly string[]).includes(ext)) {
+    return res.status(400).json({ error: '仅支持 jpg / png / webp' })
+  }
+
+  let buf: Buffer
+  try {
+    buf = Buffer.from(data, 'base64')
+  } catch {
+    return res.status(400).json({ error: '无效的图片数据' })
+  }
+  if (buf.length === 0) return res.status(400).json({ error: '图片数据为空' })
+  if (buf.length > MAX_WALLPAPER_BYTES) return res.status(400).json({ error: '图片超过 10MB 限制' })
+
+  removeWallpaper(kind) // 先清掉旧扩展名，保证同名唯一
+  fs.writeFileSync(path.join(getWallpaperDir(), `wallpaper-${kind}.${ext}`), buf)
+  res.json({ ok: true, ext })
+})
+
+// DELETE /api/settings/wallpaper/:kind —— 删除指定端壁纸
+settingsRouter.delete('/wallpaper/:kind', (req, res) => {
+  const kind = parseKind(req.params.kind)
+  if (!kind) return res.status(400).json({ error: 'invalid kind' })
+  removeWallpaper(kind)
   res.json({ ok: true })
 })

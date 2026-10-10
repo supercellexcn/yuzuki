@@ -3,6 +3,9 @@ import path from 'node:path'
 import { getDb } from './db/connection.js'
 import { getConfig } from './config.js'
 
+/** 作品卡片尺寸：小 / 中 / 大 / 自定义宽度。 */
+export type CardSize = 'small' | 'medium' | 'large' | 'custom'
+
 export interface AppSettings {
   source_paths: string[]
   scan_depth: number
@@ -43,6 +46,22 @@ export interface AppSettings {
   recommendation_series_max_count: number
   // 同系列允许绕过 MIN_SIMILARITY（独立强关联通道）
   recommendation_series_bypass_min_score: boolean
+  // ---- 外观 / 壁纸 / 主题配色（全局共享，所有用户一致）----
+  // 各表面的模糊强度（0-100，映射为 backdrop-filter 的 px）
+  wallpaper_blur: number
+  card_blur: number
+  filelist_blur: number
+  control_blur: number
+  // 作品卡片尺寸；custom 时使用 card_width（px）
+  card_size: CardSize
+  card_width: number
+  // 主题配色（hex，'' 表示使用内置默认色）：
+  // theme_color_nav 是全站主题色（导航栏 / 强调色 / 面板底色…），另两个是标签专用色
+  theme_color_nav: string
+  theme_color_actor: string
+  theme_color_tag: string
+  // 声优 / 类型标签的不透明度（1-100，越小越透）
+  tag_opacity: number
 }
 
 const DEFAULTS: AppSettings = {
@@ -75,6 +94,17 @@ const DEFAULTS: AppSettings = {
   recommendation_series_priority_enabled: true,
   recommendation_series_max_count: 3,
   recommendation_series_bypass_min_score: true,
+  wallpaper_blur: 20,
+  card_blur: 12,
+  filelist_blur: 12,
+  control_blur: 8,
+  card_size: 'medium',
+  card_width: 180,
+  theme_color_nav: '',
+  // 默认配色参考图：声优标签绿、类型标签橙（浅底深字）
+  theme_color_actor: '#7BC86C',
+  theme_color_tag: '#F2A65A',
+  tag_opacity: 62,
 }
 
 /** 把任意输入收敛到 [0,1]，非法则返回默认值。 */
@@ -83,6 +113,22 @@ function clamp01(v: unknown, fallback: number): number {
   if (!Number.isFinite(n)) return fallback
   return Math.max(0, Math.min(1, n))
 }
+
+/** 把任意输入收敛到 [0,100] 的整数（模糊强度用）。 */
+function clampPercent(v: unknown, fallback: number): number {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
+
+/** 校验 hex 颜色（#rgb / #rrggbb）。空串合法（表示用内置默认色），非法则回退 fallback。 */
+function normalizeColor(v: unknown, fallback: string): string {
+  const s = String(v ?? '').trim()
+  if (!s) return ''
+  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(s) ? s.toLowerCase() : fallback
+}
+
+const CARD_SIZES: readonly CardSize[] = ['small', 'medium', 'large', 'custom']
 
 interface SettingRow {
   key: string
@@ -136,6 +182,18 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
   next.recommendation_series_priority_enabled = Boolean(patch.recommendation_series_priority_enabled ?? cur.recommendation_series_priority_enabled)
   next.recommendation_series_max_count = Math.max(1, Math.min(20, Number(patch.recommendation_series_max_count ?? cur.recommendation_series_max_count) || DEFAULTS.recommendation_series_max_count))
   next.recommendation_series_bypass_min_score = Boolean(patch.recommendation_series_bypass_min_score ?? cur.recommendation_series_bypass_min_score)
+  next.wallpaper_blur = clampPercent(patch.wallpaper_blur ?? cur.wallpaper_blur, DEFAULTS.wallpaper_blur)
+  next.card_blur = clampPercent(patch.card_blur ?? cur.card_blur, DEFAULTS.card_blur)
+  next.filelist_blur = clampPercent(patch.filelist_blur ?? cur.filelist_blur, DEFAULTS.filelist_blur)
+  next.control_blur = clampPercent(patch.control_blur ?? cur.control_blur, DEFAULTS.control_blur)
+  const cardSize = String(patch.card_size ?? cur.card_size) as CardSize
+  next.card_size = CARD_SIZES.includes(cardSize) ? cardSize : DEFAULTS.card_size
+  next.card_width = Math.max(80, Math.min(480, Number(patch.card_width ?? cur.card_width) || DEFAULTS.card_width))
+  next.theme_color_nav = normalizeColor(patch.theme_color_nav ?? cur.theme_color_nav, DEFAULTS.theme_color_nav)
+  next.theme_color_actor = normalizeColor(patch.theme_color_actor ?? cur.theme_color_actor, DEFAULTS.theme_color_actor)
+  next.theme_color_tag = normalizeColor(patch.theme_color_tag ?? cur.theme_color_tag, DEFAULTS.theme_color_tag)
+  // 标签不透明度：1-100（不允许 0，完全透明会让标签文字也跟着看不见）
+  next.tag_opacity = Math.max(1, clampPercent(patch.tag_opacity ?? cur.tag_opacity, DEFAULTS.tag_opacity))
 
   const stmt = getDb().prepare(
     'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
@@ -197,4 +255,40 @@ export function removeDefaultCover(): void {
     }
   }
   invalidateDefaultCoverCache()
+}
+
+// ---- 壁纸（桌面端 / 移动端各一张，存 <dataDir>/wallpapers）----
+
+export type WallpaperKind = 'desktop' | 'mobile'
+
+/** 允许的壁纸图片扩展名（移动端常用 webp，故比默认封面多支持一种）。 */
+export const WALLPAPER_EXTS = ['jpg', 'jpeg', 'png', 'webp'] as const
+
+/** 壁纸存放目录（位于 dataDir 下，随数据卷持久化）。 */
+export function getWallpaperDir(): string {
+  const dir = path.join(getConfig().dataDir, 'wallpapers')
+  fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+/** 找到指定端已上传的壁纸文件，不存在返回 null。 */
+export function findWallpaper(kind: WallpaperKind): string | null {
+  const dir = getWallpaperDir()
+  for (const ext of WALLPAPER_EXTS) {
+    const p = path.join(dir, `wallpaper-${kind}.${ext}`)
+    if (fs.existsSync(p)) return p
+  }
+  return null
+}
+
+/** 删除指定端壁纸（任意扩展名）。 */
+export function removeWallpaper(kind: WallpaperKind): void {
+  const dir = getWallpaperDir()
+  for (const ext of WALLPAPER_EXTS) {
+    try {
+      fs.rmSync(path.join(dir, `wallpaper-${kind}.${ext}`), { force: true })
+    } catch {
+      /* ignore */
+    }
+  }
 }

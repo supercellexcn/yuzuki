@@ -115,6 +115,134 @@
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-title">外观 · 壁纸与模糊</div>
+      <div class="hint">
+        壁纸与模糊为全局设置（所有用户 / 设备一致）；桌面端与移动端各用一张壁纸，按窗口宽度自动切换。
+      </div>
+
+      <div v-for="wp in WALLPAPERS" :key="wp.kind" class="wallpaper-row">
+        <div class="wallpaper-label">{{ wp.label }}</div>
+        <div class="wallpaper-preview">
+          <img v-if="hasWallpaperOf(wp.kind)" :src="wallpaperPreview(wp.kind)" :alt="wp.label" />
+          <span v-else class="wallpaper-empty">未设置</span>
+        </div>
+        <div class="wallpaper-actions">
+          <el-button size="small" type="primary" @click="pickWallpaper(wp.kind)">上传</el-button>
+          <el-button
+            v-if="hasWallpaperOf(wp.kind)"
+            size="small"
+            type="danger"
+            plain
+            @click="doRemoveWallpaper(wp.kind)"
+            >删除</el-button
+          >
+        </div>
+      </div>
+      <input
+        ref="wallpaperFileInput"
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        style="display: none"
+        @change="onWallpaperFileChange"
+      />
+
+      <div class="setting-row">
+        <div class="setting-label">
+          <div>壁纸模糊</div>
+          <div class="hint">壁纸本身的模糊程度，越大越柔和。</div>
+        </div>
+        <el-slider v-model="wallpaperBlur" :min="0" :max="100" class="blur-slider" />
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          <div>面板模糊</div>
+          <div class="hint">设置卡片 / 顶部栏 / 详情页信息区 / 播放器面板的磨砂强度。</div>
+        </div>
+        <el-slider v-model="cardBlur" :min="0" :max="100" class="blur-slider" />
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          <div>文件列表模糊</div>
+          <div class="hint">作品详情页文件列表的磨砂强度。</div>
+        </div>
+        <el-slider v-model="filelistBlur" :min="0" :max="100" class="blur-slider" />
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          <div>标签 / 输入控件模糊</div>
+          <div class="hint">标签、输入框、按钮等控件的磨砂强度。</div>
+        </div>
+        <el-slider v-model="controlBlur" :min="0" :max="100" class="blur-slider" />
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-label">
+          <div>作品卡片大小</div>
+          <div class="hint">影响媒体库、收藏与推荐卡片的宽度。</div>
+        </div>
+        <div class="card-size-ctrl">
+          <el-radio-group v-model="cardSize" size="small">
+            <el-radio-button value="small">小</el-radio-button>
+            <el-radio-button value="medium">中</el-radio-button>
+            <el-radio-button value="large">大</el-radio-button>
+            <el-radio-button value="custom">自定义</el-radio-button>
+          </el-radio-group>
+          <el-input-number
+            v-if="cardSize === 'custom'"
+            v-model="cardWidth"
+            :min="80"
+            :max="480"
+            size="small"
+            controls-position="right"
+          />
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">外观 · 主题配色</div>
+      <div class="hint">
+        主题色作用于导航栏、hover 框线、播放条、卡片下半部分与设置界面等全局底色；声优 / 类型标签是独立配色。
+        每项可选预设色、用拾色器选色，或直接输入 16 进制色值（留空使用默认）。
+      </div>
+      <div v-for="item in COLOR_ITEMS" :key="item.key" class="setting-row">
+        <div class="setting-label">
+          <div>{{ item.label }}</div>
+          <div class="hint">{{ item.hint }}</div>
+        </div>
+        <div class="color-ctrl">
+          <span
+            v-for="c in PRESET_COLORS"
+            :key="c"
+            class="swatch"
+            :class="{ active: (themeColors[item.key] || '').toLowerCase() === c.toLowerCase() }"
+            :style="{ background: c }"
+            :title="c"
+            @click="themeColors[item.key] = c"
+          />
+          <el-color-picker v-model="themeColors[item.key]" size="small" />
+          <el-input
+            v-model="themeColors[item.key]"
+            size="small"
+            class="hex-input"
+            placeholder="#RRGGBB"
+          />
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          <div>标签透明度</div>
+          <div class="hint">声优 / 类型标签的不透明度，越低越透（1-100%）。</div>
+        </div>
+        <el-slider v-model="tagOpacity" :min="1" :max="100" class="blur-slider" />
+      </div>
+
+      <div class="color-reset">
+        <el-button size="small" @click="resetThemeColors">恢复默认配色</el-button>
+      </div>
+    </div>
+
     <div class="actions">
       <el-button type="primary" :loading="saving" @click="save">保存设置</el-button>
       <el-button type="success" :loading="scanning" @click="doScan">立即扫描</el-button>
@@ -185,10 +313,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useSettingsStore } from '../stores/settings'
 import { useLibraryStore } from '../stores/library'
+import { useAppearance } from '../composables/useAppearance'
 import {
   startScan,
   getScanStatus,
@@ -203,8 +332,11 @@ import {
   defaultCoverUrl,
   startRecommendationCalc,
   getRecommendationStatus,
+  uploadWallpaper,
+  removeWallpaper,
+  wallpaperUrl,
 } from '../api'
-import type { ScanJob, CoverJob, RecommendationJob } from '../api/types'
+import type { ScanJob, CoverJob, RecommendationJob, CardSize, WallpaperKind } from '../api/types'
 
 const store = useSettingsStore()
 const library = useLibraryStore()
@@ -235,6 +367,49 @@ const recJob = ref<RecommendationJob | null>(null)
 const recCalcRunning = ref(false)
 let recTimer: number | undefined
 
+// ---- 外观 / 壁纸 / 主题配色 ----
+const {
+  hasWallpaperDesktop,
+  hasWallpaperMobile,
+  apply: applyAppearance,
+  refreshWallpapers,
+  bumpWallpaperVersion,
+} = useAppearance()
+const wallpaperBlur = ref(20)
+const cardBlur = ref(12)
+const filelistBlur = ref(12)
+const controlBlur = ref(8)
+const cardSize = ref<CardSize>('medium')
+const cardWidth = ref(180)
+/** 声优 / 类型标签不透明度（1-100） */
+const tagOpacity = ref(62)
+/** el-color-picker 点「清空」会给到 null，所以这里允许 null，保存时再收敛为 ''。 */
+const themeColors = reactive<Record<'theme_color_nav' | 'theme_color_actor' | 'theme_color_tag', string | null>>({
+  theme_color_nav: '',
+  theme_color_actor: '#7BC86C',
+  theme_color_tag: '#F2A65A',
+})
+/** 本地版本号：仅在上传 / 删除后自增，用于让预览图破缓存（进页面时不换，避免闪一下） */
+const wallpaperVersion = ref(0)
+const wallpaperFileInput = ref<HTMLInputElement | null>(null)
+const pendingWallpaperKind = ref<WallpaperKind>('desktop')
+
+const WALLPAPERS: Array<{ kind: WallpaperKind; label: string }> = [
+  { kind: 'desktop', label: '桌面端壁纸' },
+  { kind: 'mobile', label: '移动端壁纸' },
+]
+/** 预设配色（偏二次元的高饱和色） */
+const PRESET_COLORS = ['#4FA8F5', '#A78BFA', '#7BC86C', '#F78FB3', '#F2A65A']
+const COLOR_ITEMS: Array<{ key: keyof typeof themeColors; label: string; hint: string }> = [
+  {
+    key: 'theme_color_nav',
+    label: '主题色',
+    hint: '顶部导航栏、hover 框线、播放条、卡片下半部分、设置界面等全局底色都由它决定。',
+  },
+  { key: 'theme_color_actor', label: '声优标签颜色', hint: '作品卡片与详情页的声优标签底色。' },
+  { key: 'theme_color_tag', label: '类型标签颜色', hint: '卡片封面标签与详情页类型标签底色。' },
+]
+
 onMounted(async () => {
   const s = await store.load()
   paths.value = s.source_paths.length ? [...s.source_paths] : ['']
@@ -255,6 +430,17 @@ onMounted(async () => {
   recAutoCalc.value = s.recommendation_auto_calc
   recJob.value = await getRecommendationStatus()
   if (recJob.value.status === 'running') startRecPolling()
+  wallpaperBlur.value = s.wallpaper_blur
+  cardBlur.value = s.card_blur
+  filelistBlur.value = s.filelist_blur
+  controlBlur.value = s.control_blur
+  cardSize.value = s.card_size
+  cardWidth.value = s.card_width
+  themeColors.theme_color_nav = s.theme_color_nav
+  themeColors.theme_color_actor = s.theme_color_actor
+  themeColors.theme_color_tag = s.theme_color_tag
+  tagOpacity.value = s.tag_opacity
+  await refreshWallpapers() // 只探测，不换版本号，避免进入本页时壁纸重载闪屏
 })
 
 onUnmounted(() => {
@@ -278,7 +464,18 @@ async function save() {
       cover_dir: coverDir.value.trim(),
       recommendation_enabled: recEnabled.value,
       recommendation_auto_calc: recAutoCalc.value,
+      wallpaper_blur: wallpaperBlur.value,
+      card_blur: cardBlur.value,
+      filelist_blur: filelistBlur.value,
+      control_blur: controlBlur.value,
+      card_size: cardSize.value,
+      card_width: cardWidth.value,
+      theme_color_nav: (themeColors.theme_color_nav || '').trim(),
+      theme_color_actor: (themeColors.theme_color_actor || '').trim(),
+      theme_color_tag: (themeColors.theme_color_tag || '').trim(),
+      tag_opacity: tagOpacity.value,
     })
+    applyAppearance() // 立即生效，无需刷新页面
     ElMessage.success('已保存')
   } catch (e) {
     ElMessage.error('保存失败: ' + (e as Error).message)
@@ -463,6 +660,67 @@ function stopRecPolling() {
     recTimer = undefined
   }
 }
+
+// ---- 壁纸 ----
+
+/** 壁纸预览 URL（带破缓存时间戳）。 */
+function wallpaperPreview(kind: WallpaperKind): string {
+  return wallpaperUrl(kind, wallpaperVersion.value || undefined)
+}
+
+/** 指定端是否已上传壁纸。 */
+function hasWallpaperOf(kind: WallpaperKind): boolean {
+  return kind === 'mobile' ? hasWallpaperMobile.value : hasWallpaperDesktop.value
+}
+
+/** 上传 / 删除后：换版本号破缓存并重新探测（进设置页时只探测，不换版本号，避免闪屏）。 */
+async function refreshWallpaperState() {
+  wallpaperVersion.value = Date.now()
+  await bumpWallpaperVersion()
+}
+
+function pickWallpaper(kind: WallpaperKind) {
+  pendingWallpaperKind.value = kind
+  wallpaperFileInput.value?.click()
+}
+
+async function onWallpaperFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = '' // 允许重复选择同一文件
+  if (!file) return
+  const kind = pendingWallpaperKind.value
+  const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
+  const reader = new FileReader()
+  reader.onload = async () => {
+    const data = String(reader.result).split(',')[1] || ''
+    try {
+      await uploadWallpaper(kind, data, ext)
+      await refreshWallpaperState()
+      ElMessage.success('壁纸已上传')
+    } catch (err) {
+      ElMessage.error('上传失败: ' + ((err as Error).message || '图片可能超过 10MB'))
+    }
+  }
+  reader.readAsDataURL(file)
+}
+
+async function doRemoveWallpaper(kind: WallpaperKind) {
+  try {
+    await removeWallpaper(kind)
+    await refreshWallpaperState()
+    ElMessage.success('已删除壁纸')
+  } catch {
+    ElMessage.error('删除壁纸失败')
+  }
+}
+
+/** 恢复内置默认配色（主题色留空 = 默认蓝，声优绿 / 类型橙）。 */
+function resetThemeColors() {
+  themeColors.theme_color_nav = ''
+  themeColors.theme_color_actor = '#7BC86C'
+  themeColors.theme_color_tag = '#F2A65A'
+}
 </script>
 
 <style scoped>
@@ -475,11 +733,12 @@ function stopRecPolling() {
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  backdrop-filter: blur(var(--card-blur));
 }
 .card-title {
   font-weight: 600;
@@ -521,7 +780,9 @@ function stopRecPolling() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px 16px;
+  /* 放不下时整行换行，控件不会被挤出卡片 */
+  flex-wrap: wrap;
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
 }
@@ -533,6 +794,9 @@ function stopRecPolling() {
   flex-direction: column;
   gap: 2px;
   font-size: 14px;
+  /* 允许收缩到比内容更窄，说明文字才会换行，而不是把右侧控件顶出卡片 */
+  flex: 1 1 220px;
+  min-width: 0;
 }
 .rec-status {
   display: flex;
@@ -610,5 +874,114 @@ function stopRecPolling() {
 .err {
   font-size: 12px;
   color: #e88;
+}
+
+/* ---- 外观 · 壁纸 ---- */
+.wallpaper-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.wallpaper-label {
+  width: 96px;
+  flex-shrink: 0;
+  font-size: 14px;
+}
+.wallpaper-preview {
+  width: 132px;
+  height: 74px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #0d0f12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.wallpaper-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.wallpaper-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+.wallpaper-actions {
+  display: flex;
+  gap: 8px;
+}
+.blur-slider {
+  /* 固定宽度但允许整行换行带走它；max-width 兜底，永远不会超出卡片 */
+  flex: 0 0 200px;
+  max-width: 100%;
+  min-width: 0;
+}
+.card-size-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+/* ---- 外观 · 主题配色 ---- */
+.color-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  /* 换行时靠右对齐，色块 / 拾色器 / 十六进制输入不会散在左边 */
+  justify-content: flex-end;
+  min-width: 0;
+}
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  box-shadow: 0 0 0 1px var(--border);
+  transition: transform 0.12s;
+}
+.swatch:hover {
+  transform: scale(1.1);
+}
+.swatch.active {
+  border-color: var(--text);
+}
+.hex-input {
+  width: 108px;
+  flex: 0 0 auto;
+}
+.color-reset {
+  padding-top: 6px;
+}
+
+/*
+ * 窄屏：设置项改为「标签在上、控件在下并占满整行」，
+ * 控件不再被长说明文字挤到卡片外面。
+ */
+@media (max-width: 640px) {
+  .setting-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .setting-label {
+    flex: 0 0 auto;
+  }
+  .blur-slider {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+  .card-size-ctrl,
+  .color-ctrl {
+    justify-content: flex-start;
+  }
 }
 </style>

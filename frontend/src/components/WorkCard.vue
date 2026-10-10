@@ -1,6 +1,7 @@
 <template>
   <div
     class="work-card"
+    :class="{ highlight }"
     :id="'wc-' + work.id"
     @click="go"
     v-longpress="isMobile ? undefined : () => fav('work', work.rj_code)"
@@ -74,7 +75,7 @@ import { useFavorite } from '../composables/useFavorite'
 import { useIsMobile } from '../composables/useIsMobile'
 import { useFavoritesStore } from '../stores/favorites'
 
-const props = defineProps<{ work: Work }>()
+const props = defineProps<{ work: Work; highlight?: boolean }>()
 const emit = defineEmits<{
   (e: 'select-circle', name: string): void
   (e: 'select-series', name: string): void
@@ -105,10 +106,25 @@ function openFavPicker() {
   transition: transform 0.12s, border-color 0.12s;
   display: flex;
   flex-direction: column;
+  /*
+   * 这里刻意不加 backdrop-filter：
+   * 1) 视觉上几乎无意义 —— 卡片背后只有壁纸，而壁纸已被「壁纸模糊」整层模糊过，
+   *    再叠一层 --card-blur 的模糊基本看不出来；
+   * 2) 它会强制每张卡片单独成为一个合成层（且带 backdrop root），与 overflow:hidden +
+   *    border-radius 的裁剪叠加后，离屏卡片在切换图片模式（整体布局变化）后滚动进视野时
+   *    容易出现「没有圆角 / 封面图不显示」的残影，需要再点一下才重绘；
+   * 3) 媒体库动辄几百张卡片，逐卡采样背景的代价也高。
+   * 磨砂效果仍由外层面板（设置卡片 / 顶部栏 / 详情页信息区 / 播放器）承担。
+   */
 }
 .work-card:hover {
   transform: translateY(-2px);
   border-color: var(--accent);
+}
+/* 上次浏览定位到的作品：用「顶部导航栏颜色」描边标识 */
+.work-card.highlight {
+  border-color: var(--topbar-color, var(--accent));
+  box-shadow: 0 0 0 2px var(--topbar-color, var(--accent));
 }
 .cover {
   aspect-ratio: 1 / 1;
@@ -161,16 +177,18 @@ function openFavPicker() {
 .cover-tag {
   font-size: 11px;
   line-height: 1;
-  padding: 3px 7px;
-  border-radius: 9px;
-  background: rgba(10, 12, 16, 0.6);
-  color: #f0f4fa;
+  padding: 3px 9px;
+  border-radius: 999px;
+  /* 与详情页保持一致的「类型标签」配色（可在设置里改） */
+  background: var(--tag-genre-bg);
+  color: var(--tag-genre-fg);
   cursor: pointer;
   transition: all 0.12s;
+  backdrop-filter: blur(var(--control-blur));
 }
 .cover-tag:hover {
   background: var(--accent);
-  color: #0b0e12;
+  color: var(--accent-fg);
 }
 /* 自定义标签（category === 'custom'）：与原生标签颜色区分 */
 .cover-tag.tag-custom {
@@ -180,13 +198,28 @@ function openFavPicker() {
 }
 .cover-tag.tag-custom:hover {
   background: var(--accent);
-  color: #0b0e12;
+  color: var(--accent-fg);
 }
 .meta {
   padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* 卡片下半部分底色：由主题色决定 */
+  background: var(--card-meta-bg);
+  /*
+   * 网格里同一行的卡片会被拉成等高，而内容少的卡片信息区本来会矮一截，
+   * 导致卡片底部露出一条没有底色的区域（看起来「颜色没充满」）。
+   * flex-grow 让信息区吃掉剩余高度，底色就铺满整张卡片了。
+   */
+  flex-grow: 1;
+  /*
+   * 图片模式切换时需要收起这一块，用 max-height + opacity 做过渡；
+   * 600px 上限远大于实际内容高度（标题 2 行 + 数据行 + 4 个声优标签），不会截断。
+   */
+  max-height: 600px;
+  overflow: hidden;
+  transition: max-height 0.5s ease, opacity 0.5s ease, padding 0.5s ease;
 }
 .title {
   font-size: 15px;
@@ -225,19 +258,21 @@ function openFavPicker() {
 }
 .chip {
   font-size: 12px;
-  padding: 3px 9px;
-  border-radius: 10px;
-  background: #262b33;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(38, 43, 51, 0.7);
   color: #c3cbd7;
   cursor: pointer;
   transition: background 0.12s;
+  backdrop-filter: blur(var(--control-blur));
 }
 .chip:hover {
   background: var(--accent);
-  color: #0b0e12;
+  color: var(--accent-fg);
 }
+/* 与详情页保持一致的「声优标签」配色（可在设置里改） */
 .chip-actor {
-  background: #2a3040;
-  color: #9db8e6;
+  background: var(--tag-actor-bg);
+  color: var(--tag-actor-fg);
 }
 </style>

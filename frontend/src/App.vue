@@ -6,6 +6,15 @@
         <router-link to="/" class="nav-link">媒体库</router-link>
       </nav>
       <div class="spacer" />
+      <!-- 图片模式：隐藏作品卡片下半部分信息，只保留封面 / RJ 角标 / 标签 -->
+      <button
+        class="top-btn"
+        :class="{ active: imageOnly }"
+        :title="imageOnly ? '退出图片模式' : '图片模式（只显示图片）'"
+        @click="toggleImageOnly"
+      >
+        M
+      </button>
       <button class="top-btn" title="回到顶部" @click="scrollToTop">T</button>
       <div v-if="auth.user" ref="userWrapRef" class="user-wrap">
         <span class="user-btn" @click="menuOpen = !menuOpen">
@@ -48,6 +57,8 @@ import { usePlayerStore } from './stores/player'
 import { useFavoritesStore } from './stores/favorites'
 import { useIsMobile } from './composables/useIsMobile'
 import { resetAdminPageSize } from './composables/useAdminPageSize'
+import { useViewMode } from './composables/useViewMode'
+import { useAppearance } from './composables/useAppearance'
 import BottomPlayer from './components/BottomPlayer.vue'
 import FullscreenPlayer from './components/FullscreenPlayer.vue'
 import FavPicker from './components/FavPicker.vue'
@@ -57,6 +68,9 @@ const auth = useAuthStore()
 const player = usePlayerStore()
 const favorites = useFavoritesStore()
 const isMobile = useIsMobile()
+const { imageOnly, toggleImageOnly } = useViewMode()
+// 启动时应用外观（壁纸 / 模糊 / 主题配色 / 卡片尺寸），并在设置或视口变化时自动重算
+useAppearance()
 
 // 用户菜单：打开状态下，点击/触摸外部任意元素或页面滚动即关闭（不依赖 element-plus 内部状态）
 const userWrapRef = ref<HTMLElement | null>(null)
@@ -131,14 +145,115 @@ function scrollToTop() {
 <style>
 :root {
   --bg: #121417;
-  --panel: #1b1e24;
+  /* 面板/页面底色拆成 rgb + alpha：接入壁纸时 alpha < 1，壁纸才能透出来 */
+  --bg-rgb: 18, 20, 23;
+  --panel-rgb: 27, 30, 36;
+  --panel-alpha: 1;
+  --panel: rgba(var(--panel-rgb), var(--panel-alpha));
   --border: #2a2e37;
   --text: #e8ebf0;
   --muted: #9aa3b0;
   --accent: #6ea8fe;
+
+  /* ---- 外观变量（由 composables/useAppearance.ts 按设置覆盖）---- */
+  --wallpaper-image: none;
+  --wallpaper-blur: 6px;
+  --card-blur: 2px;
+  --filelist-blur: 2px;
+  --control-blur: 1px;
+  --card-min-width: 180px;
+  /*
+   * 默认配色：声优标签绿、类型标签橙（浅底深字），与参考图一致。
+   * 这里必须也是半透明 —— 纯色会让标签完全没有透明/磨砂效果。
+   */
+  --tag-actor-bg: rgba(123, 200, 108, 0.62);
+  --tag-actor-fg: #1b1f26;
+  --tag-genre-bg: rgba(242, 166, 90, 0.62);
+  --tag-genre-fg: #1b1f26;
+  --card-meta-bg: transparent;
+  /* 以下均由 useAppearance 按主题色算好（未设主题色时用这里的默认值） */
+  --accent-fg: #0b0e12;
+  --accent-soft: rgba(110, 168, 254, 0.2);
+  --topbar-hover: rgba(232, 235, 240, 0.18);
+  --topbar-line: rgba(232, 235, 240, 0.35);
+  --topbar-chip: rgba(232, 235, 240, 0.22);
+}
+/* 控件圆角：由 Element Plus 默认的 4px 放大（提高特异性以覆盖其 :root 定义） */
+:root:root {
+  --el-border-radius-base: 12px;
 }
 * {
   box-sizing: border-box;
+}
+/* 壁纸层：铺满视口、位于所有内容之下；外扩一圈避免模糊后边缘露出底色 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: -48px;
+  z-index: -1;
+  background-image: var(--wallpaper-image);
+  background-size: cover;
+  background-position: center;
+  filter: blur(var(--wallpaper-blur));
+  pointer-events: none;
+}
+/* 全屏播放器打开时锁住底层页面滚动（否则触摸滑动会穿透去滚动背后的列表） */
+html.fs-open,
+html.fs-open body {
+  overflow: hidden;
+}
+/*
+ * 图片模式：收起作品卡片下半部分信息区（保留封面 / RJ 角标 / 标签）。
+ * 用 max-height + opacity 过渡，切换时是 0.5s 的收放动画而不是直接消失。
+ */
+html.image-only .work-card .meta {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+/*
+ * 控件磨砂：输入框 / 按钮 / 下拉等一律加上背景模糊。
+ * 半透明底色由 useAppearance 通过覆盖 Element Plus 的 --el-fill-color-blank 统一给出
+ * （带壁纸时才覆盖），这里只负责模糊本身。
+ */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper,
+.el-radio-button__inner,
+.el-button:not(.is-text):not(.is-link) {
+  backdrop-filter: blur(var(--control-blur));
+}
+/*
+ * 设了主题色时，顶栏文字统一换成与背景对比的颜色，
+ * 避免出现「蓝底蓝字」看不清；hover / 选中态用半透明叠加。
+ */
+html.has-nav-color .topbar .brand,
+html.has-nav-color .topbar .nav-link,
+html.has-nav-color .topbar .user-name,
+html.has-nav-color .topbar .caret,
+html.has-nav-color .topbar .top-btn {
+  color: var(--topbar-fg);
+}
+html.has-nav-color .topbar .nav-link:hover,
+html.has-nav-color .topbar .nav-link.router-link-active {
+  color: var(--topbar-fg);
+  background: var(--topbar-hover);
+}
+html.has-nav-color .topbar .top-btn:hover {
+  border-color: var(--topbar-fg);
+  color: var(--topbar-fg);
+}
+html.has-nav-color .topbar .user-btn {
+  border-color: var(--topbar-line);
+}
+html.has-nav-color .topbar .user-btn:hover {
+  border-color: var(--topbar-fg);
+  background: var(--topbar-hover);
+}
+html.has-nav-color .topbar .avatar {
+  background: var(--topbar-chip);
+  color: var(--topbar-fg);
 }
 body {
   margin: 0;
@@ -160,11 +275,13 @@ body {
   gap: 20px;
   padding: 0 24px;
   height: 60px;
-  background: var(--panel);
+  /* 顶部导航栏颜色可设置；未设置时沿用面板色（接壁纸时半透明） */
+  background: var(--topbar-color, var(--panel));
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 100;
+  backdrop-filter: blur(var(--card-blur));
 }
 .brand {
   font-weight: 700;
@@ -172,6 +289,8 @@ body {
   color: var(--accent);
   text-decoration: none;
   letter-spacing: 0.5px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .nav {
   display: flex;
@@ -184,14 +303,17 @@ body {
   padding: 7px 16px;
   border-radius: 999px;
   transition: all 0.15s;
+  /* 窄屏时不允许换行/压缩，否则「媒体库」会竖排且背景溢出导航栏 */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .nav-link:hover {
   color: var(--text);
-  background: #23272f;
+  background: rgba(35, 39, 47, 0.65);
 }
 .nav-link.router-link-active {
   color: var(--accent);
-  background: #1d2a3d;
+  background: var(--accent-soft);
   font-weight: 600;
 }
 .spacer {
@@ -209,11 +331,19 @@ body {
   cursor: pointer;
   transition: all 0.15s;
   outline: none;
+  /* 不被 flex 压缩，避免圆形按钮被挤成椭圆 */
+  flex-shrink: 0;
 }
 .top-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
-  background: #22262d;
+  background: rgba(34, 38, 45, 0.65);
+}
+/* 图片模式开启态 */
+.top-btn.active {
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  background: var(--accent);
 }
 .user-wrap {
   position: relative;
@@ -232,6 +362,7 @@ body {
   flex-direction: column;
   z-index: 300;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(var(--card-blur));
 }
 .user-menu-item {
   background: transparent;
@@ -245,7 +376,7 @@ body {
   transition: all 0.12s;
 }
 .user-menu-item:hover {
-  background: #23272f;
+  background: rgba(35, 39, 47, 0.65);
   color: var(--accent);
 }
 .user-menu-item.admin {
@@ -253,7 +384,7 @@ body {
   font-weight: 600;
 }
 .user-menu-item.admin:hover {
-  background: #1d2a3d;
+  background: var(--accent-soft);
 }
 .user-menu-item.danger {
   color: #e88;
@@ -278,17 +409,19 @@ body {
   border: 1px solid var(--border);
   transition: all 0.15s;
   outline: none;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .user-btn:hover {
   border-color: var(--accent);
-  background: #22262d;
+  background: rgba(34, 38, 45, 0.65);
 }
 .avatar {
   width: 26px;
   height: 26px;
   border-radius: 50%;
   background: var(--accent);
-  color: #0b0e12;
+  color: var(--accent-fg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -304,7 +437,7 @@ body {
   border-color: #2a5a4d !important;
 }
 .tag-custom.el-tag {
-  background: #1d3a33 !important;
+  background: rgba(29, 58, 51, 0.78) !important;
 }
 .caret {
   color: var(--muted);
@@ -324,6 +457,38 @@ body {
 @media (max-width: 760px) {
   .content.has-player {
     padding-bottom: 170px;
+  }
+  /* 窄屏：整体收紧，保证「媒体库」不换行、圆形按钮不变形、内容不溢出导航栏 */
+  .topbar {
+    gap: 8px;
+    padding: 0 10px;
+    height: 54px;
+  }
+  .brand {
+    font-size: 16px;
+    letter-spacing: 0;
+  }
+  .nav-link {
+    font-size: 13px;
+    padding: 5px 10px;
+  }
+  .top-btn {
+    width: 30px;
+    height: 30px;
+    font-size: 13px;
+  }
+  .user-btn {
+    padding: 3px 7px;
+    gap: 5px;
+  }
+  /* 用户名在窄屏收起，只留头像，避免挤爆导航栏 */
+  .user-name {
+    display: none;
+  }
+  .avatar {
+    width: 22px;
+    height: 22px;
+    font-size: 12px;
   }
 }
 </style>

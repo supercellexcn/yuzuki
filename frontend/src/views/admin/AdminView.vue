@@ -90,12 +90,12 @@ watch(isMobile, (m) => {
 }
 .tabs :deep(.el-tabs__item:hover) {
   color: var(--text);
-  background: #22262d;
+  background: rgba(34, 38, 45, 0.65);
 }
 .tabs :deep(.el-tabs__item.is-active) {
   color: var(--accent);
   font-weight: 700;
-  background: #1d2a3d;
+  background: var(--accent-soft);
 }
 .tabs :deep(.el-tabs__active-bar) {
   display: none;

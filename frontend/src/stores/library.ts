@@ -4,10 +4,11 @@ import type { Work, FilterCond, LibraryPrefs } from '../api/types'
 import { useSettingsStore } from './settings'
 
 export type SortKey = 'added' | 'release' | 'sales'
+// 标签用于媒体库顶部的分段选择（入库 / 发售 / 销量），所以保持简短
 export const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
-  { value: 'added', label: '按入库时间' },
-  { value: 'release', label: '按发售时间' },
-  { value: 'sales', label: '按销量' },
+  { value: 'added', label: '入库' },
+  { value: 'release', label: '发售' },
+  { value: 'sales', label: '销量' },
 ]
 
 let prefsTimer: ReturnType<typeof setTimeout> | undefined

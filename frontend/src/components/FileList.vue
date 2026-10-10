@@ -112,9 +112,12 @@ function formatSize(n: number): string {
 .file-list {
   display: flex;
   flex-direction: column;
+  /* 主题底色 + 磨砂（模糊强度可在设置里改） */
+  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 14px;
   overflow: hidden;
+  backdrop-filter: blur(var(--filelist-blur));
 }
 .file-item {
   display: flex;
@@ -135,10 +138,10 @@ function formatSize(n: number): string {
   font-weight: 600;
 }
 .file-item:not(.dir):hover {
-  background: #22262d;
+  background: rgba(34, 38, 45, 0.65);
 }
 .file-item.playing {
-  background: #1e2b3d;
+  background: var(--accent-soft);
   color: var(--accent);
 }
 .kind {

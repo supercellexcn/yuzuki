@@ -1,7 +1,21 @@
 <template>
   <div class="player-view">
     <div class="back">
-      <el-button @click="goBack" text>← 返回</el-button>
+      <button class="back-btn" title="返回" @click="goBack">
+        <svg
+          viewBox="0 0 24 24"
+          width="20"
+          height="20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M19 12H5" />
+          <path d="M12 19l-7-7 7-7" />
+        </svg>
+      </button>
     </div>
 
     <div v-if="loading" class="empty">加载中…</div>
@@ -38,20 +52,20 @@
               v-for="a in work.actors"
               :key="a"
               size="small"
-              class="clickable"
-              type="warning"
+              class="clickable tag-actor"
               @click="goActor(a)"
               v-longpress="() => fav('actor', a)"
               >{{ a }}</el-tag
             >
           </div>
-          <div class="tags" v-if="work.tags.length">
+          <div class="meta-row" v-if="work.tags.length">
+            <span class="label">类型</span>
             <el-tag
               v-for="t in work.tags"
               :key="t.name + t.category"
               size="small"
               class="clickable"
-              :class="{ 'tag-custom': t.category === CUSTOM_TAG }"
+              :class="{ 'tag-custom': t.category === CUSTOM_TAG, 'tag-genre': t.category !== CUSTOM_TAG }"
               @click="goTag(t.name)"
               v-longpress="() => fav('tag', t.name, t.category)"
               >{{ t.name }}</el-tag
@@ -82,21 +96,21 @@
             class="rec"
             :class="{ dragging: recDragging }"
             @pointerdown="onRecPointerDown"
+            @click.capture="onRecClickCapture"
           >
-            <div v-for="r in recommendations" :key="r.rj_code" class="rec-item" @click="onRecItemClick(r.rj_code)">
-              <div class="rec-cover">
-                <img v-if="r.cover_url" :src="authedUrl(r.cover_url)" :alt="r.title" draggable="false" />
-                <div v-else class="no-cover">{{ r.rj_code }}</div>
-              </div>
-              <div class="rec-name" :title="r.title || r.rj_code">{{ r.title || r.rj_code }}</div>
-              <div class="rec-reason" :title="recReasonText(r)">{{ recReasonText(r) }}</div>
-            </div>
+            <!-- 复用作品卡片，展示完整信息（不再展示推荐理由） -->
+            <WorkCard v-for="r in recommendations" :key="r.rj_code" :work="r" class="rec-card" />
           </div>
         </div>
       </template>
     </template>
 
-    <ImageViewer :url="imageUrl" @close="imageUrl = null" />
+    <ImageViewer
+      :urls="imageUrls"
+      :index="imageIndex"
+      @update:index="(v) => (imageIndex = v)"
+      @close="imageUrls = []"
+    />
   </div>
 </template>
 
@@ -113,6 +127,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useFavorite } from '../composables/useFavorite'
 import FileList from '../components/FileList.vue'
 import ImageViewer from '../components/ImageViewer.vue'
+import WorkCard from '../components/WorkCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -123,7 +138,9 @@ const { fav } = useFavorite()
 
 const work = ref<WorkDetail | null>(null)
 const loading = ref(true)
-const imageUrl = ref<string | null>(null)
+// 图片查看器：当前作品所有图片的 URL 列表 + 正在看的下标（支持上一张/下一张）
+const imageUrls = ref<string[]>([])
+const imageIndex = ref(0)
 const recommendations = ref<RecommendationItem[]>([])
 const recommendationsLoading = ref(false)
 const recommendationEnabled = ref(false)
@@ -198,8 +215,21 @@ function goTag(name: string) {
   library.addCondition('tag', name)
   router.push({ name: 'library' })
 }
+/** 文件所在目录（rel_path 去掉文件名）。 */
+function dirOf(f: MediaFile): string {
+  const i = f.rel_path.lastIndexOf('/')
+  return i >= 0 ? f.rel_path.slice(0, i) : ''
+}
+
 function openImage(f: MediaFile) {
-  imageUrl.value = mediaUrl(rj.value, f.id)
+  // 只在「被点图片的同一目录」内左右切换，不跨目录收集整个作品
+  const dir = dirOf(f)
+  const list = (work.value?.files || []).filter(
+    (x) => x.is_dir !== 1 && x.kind === 'image' && dirOf(x) === dir
+  )
+  const idx = list.findIndex((x) => x.id === f.id)
+  imageUrls.value = list.map((x) => mediaUrl(rj.value, x.id))
+  imageIndex.value = idx >= 0 ? idx : 0
 }
 
 /** 长按图片文件 → 设为该作品封面 */
@@ -223,33 +253,15 @@ async function onSetCover(f: MediaFile) {
   }
 }
 
-function goWork(rjCode: string) {
-  router.push({ name: 'player', params: { rj: rjCode } })
-}
-
-const REASON_META: Record<string, { icon: string; label: string }> = {
-  series: { icon: '📚', label: '同系列' },
-  voice: { icon: '🎙', label: '声优相似' },
-  tag: { icon: '🏷', label: '标签相似' },
-  title: { icon: '✏️', label: '标题相似' },
-  circle: { icon: '🏢', label: '同社团' },
-}
-
-/** 推荐原因的简短展示：由后端算出的「主因维度」决定（系列 > 标签/声优/标题/社团）。 */
-function recReasonText(r: RecommendationItem): string {
-  const dims = r.reason.mainReasons?.filter((d) => REASON_META[d]) ?? []
-  if (dims.length) return dims.map((d) => `${REASON_META[d].icon} ${REASON_META[d].label}`).join(' · ')
-  // 兜底（旧数据）：按同声优 / 同标签 / 同社团依次回退
-  if (r.reason.sameSeries) return '📚 同系列'
-  if (r.reason.sharedVoiceActors.length) return `🎙 同声优：${r.reason.sharedVoiceActors.join('、')}`
-  if (r.reason.sharedTags.length) return `🏷 同标签：${r.reason.sharedTags.join('、')}`
-  if (r.reason.sameCircle) return `🏢 同社团：${r.circle}`
-  return ''
-}
-
-function onRecItemClick(rjCode: string) {
-  if (recDragging.value) return
-  goWork(rjCode)
+/**
+ * 推荐卡片用 WorkCard 渲染（点击即跳转），拖拽滑动时需吞掉随之而来的 click。
+ * 用捕获阶段拦截：拖拽结束的 pointerup 与 click 在同一帧内先后触发，
+ * 而 recDragging 要等 setTimeout(0) 才复位，因此这里读到的仍是 true。
+ */
+function onRecClickCapture(e: MouseEvent) {
+  if (!recDragging.value) return
+  e.stopPropagation()
+  e.preventDefault()
 }
 
 /** 推荐条鼠标拖拽滑动（触屏走原生滚动），与媒体库「最近播放」一致。 */
@@ -321,9 +333,35 @@ function onRecPointerDown(e: PointerEvent) {
 .back {
   margin-bottom: 4px;
 }
+/* 返回：圆形图标按钮 + 底色（无文字） */
+.back-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  backdrop-filter: blur(var(--control-blur));
+}
+.back-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(34, 38, 45, 0.65);
+}
 .header {
   display: flex;
   gap: 24px;
+  /* 作品信息区加一层主题底色，避免文字直接压在壁纸上看不清 */
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  backdrop-filter: blur(var(--card-blur));
 }
 .cover {
   width: 220px;
@@ -366,13 +404,27 @@ function onRecPointerDown(e: PointerEvent) {
 .label {
   color: var(--muted);
 }
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
 .clickable {
   cursor: pointer;
+}
+/*
+ * 声优 / 类型标签配色：与作品卡片保持一致（可在设置里改）。
+ * 通过覆盖 Element Plus 的标签 CSS 变量实现，其余（尺寸/圆角）沿用组件样式。
+ */
+.tag-actor {
+  --el-tag-bg-color: var(--tag-actor-bg);
+  --el-tag-text-color: var(--tag-actor-fg);
+  --el-tag-border-color: transparent;
+}
+.tag-genre {
+  --el-tag-bg-color: var(--tag-genre-bg);
+  --el-tag-text-color: var(--tag-genre-fg);
+  --el-tag-border-color: transparent;
+}
+/* 标签同享控件磨砂：底色已是半透明，这里补上背景模糊 */
+.tag-actor,
+.tag-genre {
+  backdrop-filter: blur(var(--control-blur));
 }
 .meta-row.clickable:hover {
   color: var(--accent);
@@ -403,46 +455,9 @@ function onRecPointerDown(e: PointerEvent) {
   user-select: none;
   scroll-behavior: auto;
 }
-.rec-item {
-  width: 140px;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-.rec-cover {
-  width: 140px;
-  height: 140px;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #0d0f12;
-  margin-bottom: 6px;
-}
-.rec-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.no-cover {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted);
-  font-size: 11px;
-}
-.rec-name {
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rec-reason {
-  font-size: 12px;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* 推荐卡片：固定宽度（跟随卡片尺寸设置），横向滚动 */
+.rec-card {
+  flex: 0 0 var(--card-min-width);
 }
 .rec-empty {
   padding: 20px 0;
