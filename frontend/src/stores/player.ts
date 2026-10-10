@@ -12,6 +12,9 @@ function mediaSessionSupported(): boolean {
 /** 上一次同步锁屏进度的时间，用于节流（非响应式，无需进 state）。 */
 let lastPositionSyncAt = 0
 
+/** 诊断日志只打一次，避免刷屏（媒体控件属于「静默失效」型功能，留个线索好排查）。 */
+let mediaSessionLogged = false
+
 interface PlayItem {
   rj: string
   file: MediaFile
@@ -160,7 +163,11 @@ export const usePlayerStore = defineStore('player', {
      * 注意：它不能阻止系统省电策略杀进程，息屏续播仍取决于 ROM 是否放行。
      */
     initMediaSession() {
-      if (this.mediaSessionReady || !mediaSessionSupported()) return
+      if (this.mediaSessionReady) return
+      if (!mediaSessionSupported()) {
+        console.warn('[mediaSession] 当前浏览器不支持系统媒体控件（navigator.mediaSession 不存在）')
+        return
+      }
       this.mediaSessionReady = true
       const ms = navigator.mediaSession
       /** 浏览器对不支持的动作会抛错，逐个兜住即可。 */
@@ -227,6 +234,14 @@ export const usePlayerStore = defineStore('player', {
     updateMediaMetadata(rj: string, file: MediaFile, work: Work | null) {
       if (!mediaSessionSupported() || typeof MediaMetadata === 'undefined') return
       const cover = work?.cover_url ? authedUrl(work.cover_url) : ''
+      if (!mediaSessionLogged) {
+        mediaSessionLogged = true
+        console.info('[mediaSession] 已写入系统媒体卡片', {
+          title: file.filename || work?.title || rj,
+          artwork: cover ? 1 : 0,
+          secureContext: window.isSecureContext,
+        })
+      }
       navigator.mediaSession.metadata = new MediaMetadata({
         // 标题用文件名（与实际播放内容一致），专辑放作品名
         title: file.filename || work?.title || rj,
