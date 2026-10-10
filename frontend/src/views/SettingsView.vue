@@ -520,11 +520,30 @@ function pickCoverFile() {
   coverFileInput.value?.click()
 }
 
+/** 图片上传上限，与后端（10MB）保持一致：前端先拦一次，免得白传一趟才吃 413。 */
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+/** 上传前校验体积，超限给出明确提示。 */
+function checkImageSize(file: File): boolean {
+  if (file.size <= MAX_IMAGE_BYTES) return true
+  ElMessage.error(`图片 ${(file.size / 1024 / 1024).toFixed(1)}MB，超过 10MB 上限`)
+  return false
+}
+
+/**
+ * 提取接口错误信息。axios 默认只给「Request failed with status code 413」这种无用文案，
+ * 能拿到后端返回的 error 字段时优先用它。
+ */
+function apiErrorMessage(e: unknown, fallback: string): string {
+  const data = (e as { response?: { data?: { error?: string } } })?.response?.data
+  return data?.error || (e as Error)?.message || fallback
+}
+
 async function onCoverFileChange(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = '' // 允许重复选择同一文件
-  if (!file) return
+  if (!file || !checkImageSize(file)) return
   const ext = file.type === 'image/png' ? 'png' : 'jpg'
   const reader = new FileReader()
   reader.onload = async () => {
@@ -535,7 +554,7 @@ async function onCoverFileChange(e: Event) {
       hasDefaultCover.value = true
       ElMessage.success('默认封面上传成功')
     } catch (err) {
-      ElMessage.error('上传失败: ' + ((err as Error).message || '图片可能超过 10MB'))
+      ElMessage.error('上传失败：' + apiErrorMessage(err, '图片可能超过 10MB'))
     }
   }
   reader.readAsDataURL(file)
@@ -688,7 +707,7 @@ async function onWallpaperFileChange(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = '' // 允许重复选择同一文件
-  if (!file) return
+  if (!file || !checkImageSize(file)) return
   const kind = pendingWallpaperKind.value
   const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
   const reader = new FileReader()
@@ -699,7 +718,7 @@ async function onWallpaperFileChange(e: Event) {
       await refreshWallpaperState()
       ElMessage.success('壁纸已上传')
     } catch (err) {
-      ElMessage.error('上传失败: ' + ((err as Error).message || '图片可能超过 10MB'))
+      ElMessage.error('上传失败：' + apiErrorMessage(err, '图片可能超过 10MB'))
     }
   }
   reader.readAsDataURL(file)
