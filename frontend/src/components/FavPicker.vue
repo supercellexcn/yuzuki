@@ -166,15 +166,14 @@ function close() {
   gap: 6px;
   padding: 7px 13px;
   border-radius: 16px;
-  /* 半透明 + 磨砂，与全站控件一致 */
-  background: rgba(38, 43, 51, 0.7);
+  /* 控件底色（透明度可在设置里改），与全站一致 */
+  background: var(--control-bg);
   color: #d3d9e3;
   font-size: 14px;
   cursor: pointer;
   border: 1px solid transparent;
   transition: all var(--anim-duration);
   user-select: none;
-  backdrop-filter: blur(var(--control-blur));
 }
 .fp-chip:active {
   transform: scale(0.96);

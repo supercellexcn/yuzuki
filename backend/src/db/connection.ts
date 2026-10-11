@@ -203,6 +203,13 @@ function migrate(d: DatabaseSync): void {
   // 已废弃的设置项：作品卡片下半部分颜色（现由统一主题色 theme_color_nav 决定）
   d.exec("DELETE FROM settings WHERE key = 'theme_color_card'")
 
+  // 已废弃的设置项：各表面的模糊（现只保留「壁纸模糊」，其余表面改为控制不透明度）。
+  // 必须真删掉：getSettings() 会把 settings 表里的每一行都并进对象，
+  // 残留的旧 key 会在下次保存设置时被原样写回去。
+  d.exec(
+    "DELETE FROM settings WHERE key IN ('card_blur', 'filelist_blur', 'control_blur', 'tag_opacity')"
+  )
+
   // 推荐算法 v2.0：检测到旧版本推荐数据（v1.x）时，清空推荐结果并重置推荐配置。
   // 只触发一次——下次计算写入的 algorithm_version 就是 v2.0，之后启动不再进入。
   const staleRec = (

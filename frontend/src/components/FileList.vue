@@ -114,12 +114,11 @@ function formatSize(n: number): string {
    * 块容器下静态位置才是它原本所在的位置；flex 容器会把绝对定位子元素的静态位置
    * 算成容器内容区起点（顶部），导致所有离开的行堆到列表顶部淡出（已实测确认）。
    */
-  /* 主题底色 + 磨砂（模糊强度可在设置里改） */
-  background: var(--panel);
+  /* 主题底色（透明度可在设置里改；只有有壁纸时才真的半透明） */
+  background: var(--filelist-panel);
   border: 1px solid var(--border);
   border-radius: 14px;
   overflow: hidden;
-  backdrop-filter: blur(var(--filelist-blur));
   /* 离开动画中的行用 absolute 定位，需要这里做定位上下文 */
   position: relative;
 }

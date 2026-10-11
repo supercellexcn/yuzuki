@@ -47,11 +47,17 @@ export interface AppSettings {
   // 同系列允许绕过 MIN_SIMILARITY（独立强关联通道）
   recommendation_series_bypass_min_score: boolean
   // ---- 外观 / 壁纸 / 主题配色（全局共享，所有用户一致）----
-  // 各表面的模糊强度（0-100，映射为 backdrop-filter 的 px）
+  // 壁纸本身的模糊强度（0-100，映射为 filter 的 px）。
+  // 其余表面（面板 / 文件列表 / 控件）刻意不做磨砂：壁纸已经整层模糊过，
+  // 再叠一层模糊几乎看不出差别，却要为每个元素付一个合成层的代价（长列表里是几万个）。
+  // 这些表面改为控制「底色的不透明度」。
   wallpaper_blur: number
-  card_blur: number
-  filelist_blur: number
-  control_blur: number
+  // 面板（顶部栏 / 详情页信息区 / 播放器 / 设置卡片）底色不透明度（0-100，越大越不透明）
+  panel_opacity: number
+  // 作品详情页文件列表底色不透明度（0-100）
+  filelist_opacity: number
+  // 输入框 / 按钮 / 各类标签底色等控件的不透明度（0-100）
+  control_opacity: number
   // 作品卡片尺寸；custom 时使用 card_width（px）
   card_size: CardSize
   card_width: number
@@ -60,8 +66,9 @@ export interface AppSettings {
   theme_color_nav: string
   theme_color_actor: string
   theme_color_tag: string
-  // 声优 / 类型标签的不透明度（1-100，越小越透）
-  tag_opacity: number
+  // 声优 / 类型标签的不透明度，分开控制（1-100，越大越不透明）
+  actor_tag_opacity: number
+  genre_tag_opacity: number
   // 全局动画时长（秒，0-1）。0 表示关闭动画；所有界面动画都以它为准。
   animation_duration: number
 }
@@ -97,16 +104,17 @@ const DEFAULTS: AppSettings = {
   recommendation_series_max_count: 3,
   recommendation_series_bypass_min_score: true,
   wallpaper_blur: 20,
-  card_blur: 12,
-  filelist_blur: 12,
-  control_blur: 8,
+  panel_opacity: 62,
+  filelist_opacity: 62,
+  control_opacity: 70,
   card_size: 'medium',
   card_width: 180,
   theme_color_nav: '',
   // 默认配色参考图：声优标签绿、类型标签橙（浅底深字）
   theme_color_actor: '#7BC86C',
   theme_color_tag: '#F2A65A',
-  tag_opacity: 62,
+  actor_tag_opacity: 62,
+  genre_tag_opacity: 62,
   animation_duration: 0.25,
 }
 
@@ -117,7 +125,7 @@ function clamp01(v: unknown, fallback: number): number {
   return Math.max(0, Math.min(1, n))
 }
 
-/** 把任意输入收敛到 [0,100] 的整数（模糊强度用）。 */
+/** 把任意输入收敛到 [0,100] 的整数（模糊强度 / 不透明度用）。 */
 function clampPercent(v: unknown, fallback: number): number {
   const n = Number(v)
   if (!Number.isFinite(n)) return fallback
@@ -186,9 +194,9 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
   next.recommendation_series_max_count = Math.max(1, Math.min(20, Number(patch.recommendation_series_max_count ?? cur.recommendation_series_max_count) || DEFAULTS.recommendation_series_max_count))
   next.recommendation_series_bypass_min_score = Boolean(patch.recommendation_series_bypass_min_score ?? cur.recommendation_series_bypass_min_score)
   next.wallpaper_blur = clampPercent(patch.wallpaper_blur ?? cur.wallpaper_blur, DEFAULTS.wallpaper_blur)
-  next.card_blur = clampPercent(patch.card_blur ?? cur.card_blur, DEFAULTS.card_blur)
-  next.filelist_blur = clampPercent(patch.filelist_blur ?? cur.filelist_blur, DEFAULTS.filelist_blur)
-  next.control_blur = clampPercent(patch.control_blur ?? cur.control_blur, DEFAULTS.control_blur)
+  next.panel_opacity = clampPercent(patch.panel_opacity ?? cur.panel_opacity, DEFAULTS.panel_opacity)
+  next.filelist_opacity = clampPercent(patch.filelist_opacity ?? cur.filelist_opacity, DEFAULTS.filelist_opacity)
+  next.control_opacity = clampPercent(patch.control_opacity ?? cur.control_opacity, DEFAULTS.control_opacity)
   const cardSize = String(patch.card_size ?? cur.card_size) as CardSize
   next.card_size = CARD_SIZES.includes(cardSize) ? cardSize : DEFAULTS.card_size
   next.card_width = Math.max(80, Math.min(480, Number(patch.card_width ?? cur.card_width) || DEFAULTS.card_width))
@@ -196,7 +204,14 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
   next.theme_color_actor = normalizeColor(patch.theme_color_actor ?? cur.theme_color_actor, DEFAULTS.theme_color_actor)
   next.theme_color_tag = normalizeColor(patch.theme_color_tag ?? cur.theme_color_tag, DEFAULTS.theme_color_tag)
   // 标签不透明度：1-100（不允许 0，完全透明会让标签文字也跟着看不见）
-  next.tag_opacity = Math.max(1, clampPercent(patch.tag_opacity ?? cur.tag_opacity, DEFAULTS.tag_opacity))
+  next.actor_tag_opacity = Math.max(
+    1,
+    clampPercent(patch.actor_tag_opacity ?? cur.actor_tag_opacity, DEFAULTS.actor_tag_opacity)
+  )
+  next.genre_tag_opacity = Math.max(
+    1,
+    clampPercent(patch.genre_tag_opacity ?? cur.genre_tag_opacity, DEFAULTS.genre_tag_opacity)
+  )
   // 动画时长：0-1 秒（0 合法 = 关闭动画，所以不能用 `|| 默认值`）
   const anim = Number(patch.animation_duration ?? cur.animation_duration)
   next.animation_duration = Number.isFinite(anim)

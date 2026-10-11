@@ -110,17 +110,23 @@ export interface AppSettings {
   recommendation_series_max_count: number
   recommendation_series_bypass_min_score: boolean
   // ---- 外观 / 壁纸 / 主题配色（全局共享）----
+  /** 壁纸本身的模糊强度（0-100）。全站只有壁纸做模糊，其余表面只调不透明度。 */
   wallpaper_blur: number
-  card_blur: number
-  filelist_blur: number
-  control_blur: number
+  /** 面板（顶部栏 / 详情页信息区 / 播放器 / 设置卡片）底色不透明度（0-100）。有壁纸时才生效 */
+  panel_opacity: number
+  /** 作品详情页文件列表底色不透明度（0-100）。有壁纸时才生效 */
+  filelist_opacity: number
+  /** 输入框 / 按钮 / 各类标签底色等控件的不透明度（0-100） */
+  control_opacity: number
   card_size: CardSize
   card_width: number
   theme_color_nav: string
   theme_color_actor: string
   theme_color_tag: string
-  /** 声优 / 类型标签的不透明度（1-100，越小越透） */
-  tag_opacity: number
+  /** 声优标签的不透明度（1-100，越大越不透明） */
+  actor_tag_opacity: number
+  /** 作品类型标签的不透明度（1-100，越大越不透明） */
+  genre_tag_opacity: number
   /** 全局动画时长（秒，0-1）。0 表示关闭动画。 */
   animation_duration: number
 }
@@ -158,8 +164,6 @@ export interface LibraryPrefs {
   q: string
   sort: string
   order: 'asc' | 'desc'
-  lastWorkId: number | null
-  lastScrollTop: number
   /** 管理功能各板块每页数量（works/series/circles/actors/tags），每板块独立记住 */
   adminPageSizes: Record<string, number>
 }
@@ -180,8 +184,14 @@ export interface LoginResponse {
 }
 
 export interface PlayRecord extends Work {
+  /** 分组 ID —— 取该「一次连听」里第一条记录的 id，可安全用作列表 key */
   play_id: number
+  /** 这一组里最后一次播放的时间 */
   played_at: string
+  /** 这一组里第一次播放的时间 */
+  started_at: string
+  /** 这一组合并了几条播放记录（同一时间段内连听的文件数） */
+  group_count: number
 }
 
 export interface PlaysResponse {

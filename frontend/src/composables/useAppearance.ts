@@ -5,17 +5,19 @@ import { useSettingsStore } from '../stores/settings'
 import { useIsMobile } from './useIsMobile'
 
 /**
- * 外观系统：把「设置」里的壁纸 / 模糊 / 主题配色 / 卡片尺寸落到 document.documentElement
- * 的 CSS 变量上，供全局样式（App.vue）与各组件消费。
+ * 外观系统：把「设置」里的壁纸 / 模糊 / 底色透明度 / 主题配色 / 卡片尺寸落到
+ * document.documentElement 的 CSS 变量上，供全局样式（App.vue）与各组件消费。
  *
  * 这些设置是全局共享的（存服务端 settings 表）；移动端与桌面端各有一张壁纸，
  * 按当前视口宽度（useIsMobile）自动取对应那张。
  *
  * 两个要点：
  * 1) 主题色一律以「带 alpha 的 rgba」下发（在 JS 里算好），不用 CSS 的 color-mix ——
- *    兼容性更好，且半透明才能让 backdrop-filter 的磨砂效果看得出来。
- * 2) 主题色除了导航栏，还统一驱动 hover 框线、播放条、面板底色（含设置界面、
- *    卡片下半部分、文件列表）等；只有「声优标签」和「作品类型标签」是独立配色。
+ *    兼容性更好，且半透明才能让壁纸透出来。
+ * 2) 全站只有壁纸做模糊：面板 / 文件列表 / 控件都不加 backdrop-filter（壁纸已整层糊过，
+ *    再叠一层看不出差别却要给每个元素建合成层，媒体库几千张卡片时就是几万个），
+ *    它们只受「底色不透明度」控制。主题色统一驱动 hover 框线、播放条、面板底色等；
+ *    只有「声优标签」和「作品类型标签」是独立配色 + 独立透明度。
  */
 
 type RGB = [number, number, number]
@@ -39,8 +41,11 @@ const DEFAULT_ANIM_SECONDS = 0.25
 
 /** 各类颜色的不透明度：导航栏留一点透，标签透得更明显。 */
 const NAV_ALPHA = 0.75
-/** 标签不透明度在设置里的默认值（1-100），与样式表兜底值保持一致。 */
+/** 不透明度设置项的默认值（百分比），与样式表兜底值、后端默认值保持一致。 */
 const DEFAULT_TAG_OPACITY = 62
+const DEFAULT_PANEL_OPACITY = 62
+const DEFAULT_FILELIST_OPACITY = 62
+const DEFAULT_CONTROL_OPACITY = 70
 const CARD_META_ALPHA = 0.26
 
 // ---- 模块级共享状态（多个组件调用 useAppearance 时共用同一份）----
@@ -96,6 +101,18 @@ function readableFg(hex: string): string {
   return luminance > 0.6 ? '#1b1f26' : '#ffffff'
 }
 
+/** 设置里的百分比 → alpha（0-1）。 */
+function pct(v: unknown, fallback: number): number {
+  const n = Number(v)
+  const p = Number.isFinite(n) ? n : fallback
+  return Math.max(0, Math.min(100, p)) / 100
+}
+
+/** 标签底色的 alpha：下限 1%（=0 会让标签整个看不见，与后端归一化保持一致）。 */
+function tagPct(v: unknown): number {
+  return Math.max(0.01, pct(v, DEFAULT_TAG_OPACITY))
+}
+
 /** 设置 / 移除一个 CSS 变量；空值表示回落到样式表里的内置默认。 */
 function setVar(name: string, value: string): void {
   const root = document.documentElement
@@ -142,11 +159,30 @@ export function useAppearance() {
     const root = document.documentElement
     if (!s) return
 
-    // 模糊：百分比 → px。不同表面用不同系数，100% 时效果明显但不至于糊成一片。
+    // ---- 壁纸 ----
+    // 先算出壁纸 URL：下面「底色透明度」是否生效取决于有没有壁纸。
+    const wallUrl =
+      hasCurrentWallpaper.value && getToken()
+        ? wallpaperUrl(currentKind.value, wallpaperVersion.value || undefined)
+        : ''
+    root.style.setProperty('--wallpaper-image', wallUrl ? `url("${wallUrl}")` : 'none')
+
+    // ---- 模糊：只作用于壁纸本身（其余表面的 backdrop-filter 已全部移除）----
     root.style.setProperty('--wallpaper-blur', `${Math.round(s.wallpaper_blur * 0.3)}px`)
-    root.style.setProperty('--card-blur', `${Math.round(s.card_blur * 0.2)}px`)
-    root.style.setProperty('--filelist-blur', `${Math.round(s.filelist_blur * 0.2)}px`)
-    root.style.setProperty('--control-blur', `${Math.round(s.control_blur * 0.15)}px`)
+
+    // ---- 底色不透明度：面板 / 文件列表 / 控件 ----
+    // 面板与文件列表没有壁纸时不生效（保持不透明）：半透明面板盖在纯色背景上会糊成一片、失去层次。
+    // 控件（输入框 / 按钮 / 标签底色）始终生效 —— 它们盖在卡片和面板上，本来就不依赖壁纸。
+    const wp = Boolean(wallUrl)
+    root.style.setProperty('--panel-alpha', String(wp ? pct(s.panel_opacity, DEFAULT_PANEL_OPACITY) : 1))
+    root.style.setProperty(
+      '--filelist-alpha',
+      String(wp ? pct(s.filelist_opacity, DEFAULT_FILELIST_OPACITY) : 1)
+    )
+    const controlAlpha = pct(s.control_opacity, DEFAULT_CONTROL_OPACITY)
+    root.style.setProperty('--control-alpha', String(controlAlpha))
+    // 输入框等控件的底色走 Element Plus 的统一变量（半透明白）；没壁纸时移除覆盖，保持原观感
+    setVar('--el-fill-color-blank', wp ? `rgba(255, 255, 255, ${controlAlpha})` : '')
 
     const width = s.card_size === 'custom' ? s.card_width : CARD_MIN_WIDTH[s.card_size]
     root.style.setProperty('--card-min-width', `${width}px`)
@@ -161,8 +197,11 @@ export function useAppearance() {
     const nav = s.theme_color_nav
     const navRgb = nav ? hexToRgb(nav) : null
     const navFg = navRgb ? readableFg(nav) : ''
+    // 顶栏也是一块面板：设了主题色时用「主题色 + 面板透明度」，滑杆才会对顶栏生效。
+    // 没有壁纸时沿用固定的 NAV_ALPHA（与改动前的观感一致）。
+    const topbarAlpha = wp ? pct(s.panel_opacity, DEFAULT_PANEL_OPACITY) : NAV_ALPHA
     setVar('--accent', nav)
-    setVar('--topbar-color', navRgb ? rgba(nav, NAV_ALPHA) : '')
+    setVar('--topbar-color', navRgb ? rgba(nav, topbarAlpha) : '')
     setVar('--topbar-fg', navFg)
     // 强调色块（播放键等）上的前景色：深色主题色时自动转白，避免看不清
     setVar('--accent-fg', navFg)
@@ -188,28 +227,15 @@ export function useAppearance() {
     setVar('--el-color-primary-light-9', navRgb ? rgb(nav, [255, 255, 255], 0.9) : '')
     setVar('--el-color-primary-dark-2', navRgb ? rgb(nav, [0, 0, 0], 0.2) : '')
 
-    // ---- 声优 / 类型标签：独立配色 + 可调不透明度（设置里的「标签透明度」）----
+    // ---- 声优 / 类型标签：独立配色 + 各自可调的不透明度 ----
     // 设置留空时也要下发内置默认色（且必须是带 alpha 的 rgba），
-    // 否则会回落到样式表里的纯色默认值，标签就完全没有透明/磨砂了。
+    // 否则会回落到样式表里的纯色默认值，标签就完全没有透明效果了。
     const actorColor = s.theme_color_actor || DEFAULT_ACTOR_COLOR
     const tagColor = s.theme_color_tag || DEFAULT_TAG_COLOR
-    const tagAlpha =
-      Math.max(1, Math.min(100, Number(s.tag_opacity) || DEFAULT_TAG_OPACITY)) / 100
-    setVar('--tag-actor-bg', rgba(actorColor, tagAlpha))
+    setVar('--tag-actor-bg', rgba(actorColor, tagPct(s.actor_tag_opacity)))
     setVar('--tag-actor-fg', TAG_FG)
-    setVar('--tag-genre-bg', rgba(tagColor, tagAlpha))
+    setVar('--tag-genre-bg', rgba(tagColor, tagPct(s.genre_tag_opacity)))
     setVar('--tag-genre-fg', TAG_FG)
-
-    // ---- 壁纸 ----
-    const url =
-      hasCurrentWallpaper.value && getToken()
-        ? wallpaperUrl(currentKind.value, wallpaperVersion.value || undefined)
-        : ''
-    root.style.setProperty('--wallpaper-image', url ? `url("${url}")` : 'none')
-    root.style.setProperty('--panel-alpha', url ? '0.62' : '1')
-    // 控件底色改成半透明白（Element Plus 统一读这个变量），磨砂才看得出来；
-    // 没壁纸时移除覆盖，保持原本不透明的观感。
-    setVar('--el-fill-color-blank', url ? 'rgba(255, 255, 255, 0.72)' : '')
   }
 
   /**

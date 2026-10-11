@@ -1,21 +1,7 @@
 <template>
   <div class="player-view">
     <div class="back">
-      <button class="back-btn" title="返回" @click="goBack">
-        <svg
-          viewBox="0 0 24 24"
-          width="20"
-          height="20"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M19 12H5" />
-          <path d="M12 19l-7-7 7-7" />
-        </svg>
-      </button>
+      <BackButton />
     </div>
 
     <div v-if="loading" class="empty">加载中…</div>
@@ -144,6 +130,7 @@ import FileList from '../components/FileList.vue'
 import ImageViewer from '../components/ImageViewer.vue'
 import ImageActions from '../components/ImageActions.vue'
 import WorkCard from '../components/WorkCard.vue'
+import BackButton from '../components/BackButton.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -211,11 +198,6 @@ load()
 // 同组件内切换作品（如点击底部播放条跳转）时重新加载
 watch(rj, () => load())
 
-function goBack() {
-  // 回到从媒体库点击过来的位置；无历史记录时兜底回媒体库
-  if (window.history.state?.back) router.back()
-  else router.push({ name: 'library' })
-}
 function goCircle(name: string) {
   library.addCondition('circle', name)
   router.push({ name: 'library' })
@@ -395,26 +377,6 @@ function onRecPointerDown(e: PointerEvent) {
 .back {
   margin-bottom: 4px;
 }
-/* 返回：圆形图标按钮 + 底色（无文字） */
-.back-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all var(--anim-duration);
-  backdrop-filter: blur(var(--control-blur));
-}
-.back-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(34, 38, 45, 0.65);
-}
 .header {
   display: flex;
   gap: 24px;
@@ -423,7 +385,6 @@ function onRecPointerDown(e: PointerEvent) {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 16px;
-  backdrop-filter: blur(var(--card-blur));
 }
 .cover {
   width: 220px;
@@ -482,11 +443,6 @@ function onRecPointerDown(e: PointerEvent) {
   --el-tag-bg-color: var(--tag-genre-bg);
   --el-tag-text-color: var(--tag-genre-fg);
   --el-tag-border-color: transparent;
-}
-/* 标签同享控件磨砂：底色已是半透明，这里补上背景模糊 */
-.tag-actor,
-.tag-genre {
-  backdrop-filter: blur(var(--control-blur));
 }
 .meta-row.clickable:hover {
   color: var(--accent);

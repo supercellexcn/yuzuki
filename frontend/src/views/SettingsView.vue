@@ -116,7 +116,7 @@
     </div>
 
     <div class="card">
-      <div class="card-title">外观 · 壁纸与模糊</div>
+      <div class="card-title">外观 · 壁纸与透明度</div>
       <div class="hint">
         壁纸与模糊为全局设置（所有用户 / 设备一致）；桌面端与移动端各用一张壁纸，按窗口宽度自动切换。
       </div>
@@ -150,30 +150,33 @@
       <div class="setting-row">
         <div class="setting-label">
           <div>壁纸模糊</div>
-          <div class="hint">壁纸本身的模糊程度，越大越柔和。</div>
+          <div class="hint">壁纸本身的模糊程度，越大越柔和。全站只有壁纸做模糊。</div>
         </div>
         <el-slider v-model="wallpaperBlur" :min="0" :max="100" class="blur-slider" />
       </div>
       <div class="setting-row">
         <div class="setting-label">
-          <div>面板模糊</div>
-          <div class="hint">设置卡片 / 顶部栏 / 详情页信息区 / 播放器面板的磨砂强度。</div>
+          <div>面板透明度</div>
+          <div class="hint">
+            设置卡片 / 顶部栏 / 详情页信息区 / 播放器面板底色的不透明度，0 全透、100 完全不透明。
+            有壁纸时生效。
+          </div>
         </div>
-        <el-slider v-model="cardBlur" :min="0" :max="100" class="blur-slider" />
+        <el-slider v-model="panelOpacity" :min="0" :max="100" class="blur-slider" />
       </div>
       <div class="setting-row">
         <div class="setting-label">
-          <div>文件列表模糊</div>
-          <div class="hint">作品详情页文件列表的磨砂强度。</div>
+          <div>文件列表透明度</div>
+          <div class="hint">作品详情页文件列表底色的不透明度。有壁纸时生效。</div>
         </div>
-        <el-slider v-model="filelistBlur" :min="0" :max="100" class="blur-slider" />
+        <el-slider v-model="filelistOpacity" :min="0" :max="100" class="blur-slider" />
       </div>
       <div class="setting-row">
         <div class="setting-label">
-          <div>标签 / 输入控件模糊</div>
-          <div class="hint">标签、输入框、按钮等控件的磨砂强度。</div>
+          <div>控件透明度</div>
+          <div class="hint">输入框、按钮、标签底色等控件的不透明度，0 全透、100 完全不透明。</div>
         </div>
-        <el-slider v-model="controlBlur" :min="0" :max="100" class="blur-slider" />
+        <el-slider v-model="controlOpacity" :min="0" :max="100" class="blur-slider" />
       </div>
 
       <div class="setting-row">
@@ -246,10 +249,17 @@
       </div>
       <div class="setting-row">
         <div class="setting-label">
-          <div>标签透明度</div>
-          <div class="hint">声优 / 类型标签的不透明度，越低越透（1-100%）。</div>
+          <div>声优标签透明度</div>
+          <div class="hint">声优标签底色的不透明度，越高越不透明（1-100%）。</div>
         </div>
-        <el-slider v-model="tagOpacity" :min="1" :max="100" class="blur-slider" />
+        <el-slider v-model="actorTagOpacity" :min="1" :max="100" class="blur-slider" />
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          <div>类型标签透明度</div>
+          <div class="hint">作品类型标签（含卡片封面上的标签）底色的不透明度（1-100%）。</div>
+        </div>
+        <el-slider v-model="genreTagOpacity" :min="1" :max="100" class="blur-slider" />
       </div>
 
       <div class="color-reset">
@@ -390,13 +400,15 @@ const {
   bumpWallpaperVersion,
 } = useAppearance()
 const wallpaperBlur = ref(20)
-const cardBlur = ref(12)
-const filelistBlur = ref(12)
-const controlBlur = ref(8)
+const panelOpacity = ref(62)
+const filelistOpacity = ref(62)
+const controlOpacity = ref(70)
 const cardSize = ref<CardSize>('medium')
 const cardWidth = ref(180)
-/** 声优 / 类型标签不透明度（1-100） */
-const tagOpacity = ref(62)
+/** 声优标签不透明度（1-100） */
+const actorTagOpacity = ref(62)
+/** 类型标签不透明度（1-100） */
+const genreTagOpacity = ref(62)
 /** 全局动画时长（秒，0-1）；0 表示关闭动画 */
 const animationDuration = ref(0.25)
 /** el-color-picker 点「清空」会给到 null，所以这里允许 null，保存时再收敛为 ''。 */
@@ -447,15 +459,16 @@ onMounted(async () => {
   recJob.value = await getRecommendationStatus()
   if (recJob.value.status === 'running') startRecPolling()
   wallpaperBlur.value = s.wallpaper_blur
-  cardBlur.value = s.card_blur
-  filelistBlur.value = s.filelist_blur
-  controlBlur.value = s.control_blur
+  panelOpacity.value = s.panel_opacity
+  filelistOpacity.value = s.filelist_opacity
+  controlOpacity.value = s.control_opacity
   cardSize.value = s.card_size
   cardWidth.value = s.card_width
   themeColors.theme_color_nav = s.theme_color_nav
   themeColors.theme_color_actor = s.theme_color_actor
   themeColors.theme_color_tag = s.theme_color_tag
-  tagOpacity.value = s.tag_opacity
+  actorTagOpacity.value = s.actor_tag_opacity
+  genreTagOpacity.value = s.genre_tag_opacity
   animationDuration.value = s.animation_duration
   await refreshWallpapers() // 只探测，不换版本号，避免进入本页时壁纸重载闪屏
 })
@@ -482,15 +495,16 @@ async function save() {
       recommendation_enabled: recEnabled.value,
       recommendation_auto_calc: recAutoCalc.value,
       wallpaper_blur: wallpaperBlur.value,
-      card_blur: cardBlur.value,
-      filelist_blur: filelistBlur.value,
-      control_blur: controlBlur.value,
+      panel_opacity: panelOpacity.value,
+      filelist_opacity: filelistOpacity.value,
+      control_opacity: controlOpacity.value,
       card_size: cardSize.value,
       card_width: cardWidth.value,
       theme_color_nav: (themeColors.theme_color_nav || '').trim(),
       theme_color_actor: (themeColors.theme_color_actor || '').trim(),
       theme_color_tag: (themeColors.theme_color_tag || '').trim(),
-      tag_opacity: tagOpacity.value,
+      actor_tag_opacity: actorTagOpacity.value,
+      genre_tag_opacity: genreTagOpacity.value,
       animation_duration: animationDuration.value,
     })
     applyAppearance() // 立即生效，无需刷新页面
@@ -775,7 +789,6 @@ function resetThemeColors() {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  backdrop-filter: blur(var(--card-blur));
 }
 .card-title {
   font-weight: 600;

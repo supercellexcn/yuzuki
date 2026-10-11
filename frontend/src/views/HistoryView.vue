@@ -1,9 +1,9 @@
 <template>
   <div class="history">
     <div class="back">
-      <el-button @click="router.back()" text>← 返回</el-button>
+      <BackButton />
     </div>
-    <h2>播放历史 <span class="count">共 {{ total }} 次</span></h2>
+    <h2>播放历史 <span class="count">共 {{ total }} 段</span></h2>
 
     <div v-if="loading && !items.length" class="empty">加载中…</div>
     <div v-else-if="!items.length" class="empty">暂无播放记录</div>
@@ -22,7 +22,11 @@
             <span v-if="p.play_count > 0"> · 播放 {{ p.play_count }} 次</span>
           </div>
         </div>
-        <div class="time">{{ fmtTime(p.played_at) }}</div>
+        <div class="time">
+          <!-- 同一时间段连听的多个文件已合并为一条，这里标出这一组合并了几个文件 -->
+          <div v-if="p.group_count > 1" class="group-count">本次 {{ p.group_count }} 个文件</div>
+          <div>{{ fmtTime(p.played_at) }}</div>
+        </div>
       </div>
     </div>
 
@@ -38,6 +42,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getPlays, authedUrl } from '../api'
 import type { PlayRecord } from '../api/types'
+import BackButton from '../components/BackButton.vue'
 
 const router = useRouter()
 const items = ref<PlayRecord[]>([])
@@ -167,6 +172,12 @@ function fmtTime(t: string): string {
   font-size: 12px;
   color: var(--muted);
   flex-shrink: 0;
+  text-align: right;
+}
+/* 合并了多个文件时，在时间上方标一行「本次 N 个文件」 */
+.group-count {
+  color: var(--accent);
+  margin-bottom: 2px;
 }
 .empty {
   padding: 60px 0;

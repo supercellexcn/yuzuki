@@ -158,16 +158,26 @@ function scrollToTop() {
   /* ---- 外观变量（由 composables/useAppearance.ts 按设置覆盖）---- */
   --wallpaper-image: none;
   --wallpaper-blur: 6px;
-  --card-blur: 2px;
-  --filelist-blur: 2px;
-  --control-blur: 1px;
   --card-min-width: 180px;
+  /*
+   * 各表面底色的不透明度。全站只有「壁纸」做模糊（--wallpaper-blur）：
+   * 壁纸已经整层糊过，面板/标签再叠一层 backdrop-filter 几乎看不出差别，
+   * 却要给每个元素建一个合成层（媒体库几千张卡片时就是几万个），代价远大于收益。
+   * 所以这些表面只调「底色透多少」。
+   * 有壁纸时由 useAppearance 按设置覆盖；没有壁纸时面板保持不透明，
+   * 否则半透明面板盖在纯色背景上会糊成一片、失去层次。
+   */
+  --filelist-alpha: 1;
+  --control-rgb: 38, 43, 51;
+  --control-alpha: 0.7;
+  --control-bg: rgba(var(--control-rgb), var(--control-alpha));
+  --filelist-panel: rgba(var(--panel-rgb), var(--filelist-alpha));
   /* 全局动画时长：所有 transition/animation 都读它（由 useAppearance 按设置覆盖）。
      0s 即关闭动画。 */
   --anim-duration: 0.25s;
   /*
    * 默认配色：声优标签绿、类型标签橙；文字统一白色。
-   * 底色这里必须也是半透明 —— 纯色会让标签完全没有透明/磨砂效果。
+   * 底色这里必须也是半透明 —— 纯色会让标签完全没有透明效果。
    */
   --tag-actor-bg: rgba(123, 200, 108, 0.62);
   --tag-actor-fg: #ffffff;
@@ -225,17 +235,9 @@ html.image-only .work-card .meta {
   padding-bottom: 0;
 }
 /*
- * 控件磨砂：输入框 / 按钮 / 下拉等一律加上背景模糊。
- * 半透明底色由 useAppearance 通过覆盖 Element Plus 的 --el-fill-color-blank 统一给出
- * （带壁纸时才覆盖），这里只负责模糊本身。
+ * 控件（输入框 / 按钮 / 下拉）的底色由 useAppearance 覆盖 Element Plus 的
+ * --el-fill-color-blank 统一给出（带壁纸时才覆盖），这里不再额外加模糊。
  */
-.el-input__wrapper,
-.el-textarea__inner,
-.el-select__wrapper,
-.el-radio-button__inner,
-.el-button:not(.is-text):not(.is-link) {
-  backdrop-filter: blur(var(--control-blur));
-}
 /*
  * 设了主题色时，顶栏文字统一换成与背景对比的颜色，
  * 避免出现「蓝底蓝字」看不清；hover / 选中态用半透明叠加。
@@ -293,21 +295,6 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
-  /*
-   * 顶栏自身的磨砂**不写在这里**，而是放在下面的 ::before 上。
-   * 原因：.topbar 一旦自己带 backdrop-filter，就会给后代建立 backdrop root，
-   * 使「点 admin 弹出的用户菜单」的 backdrop-filter 只能在该 root 内取样（那里什么都没有），
-   * 菜单的磨砂就完全失效（已用渲染实验确认）。伪元素没有后代，不会造成这个问题。
-   */
-}
-/* 顶栏磨砂层：铺满顶栏、位于内容之下，只负责把背后的内容糊掉 */
-.topbar::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  backdrop-filter: blur(var(--card-blur));
 }
 .brand {
   font-weight: 700;
@@ -388,7 +375,6 @@ body {
   flex-direction: column;
   z-index: 300;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(var(--card-blur));
 }
 .user-menu-item {
   background: transparent;

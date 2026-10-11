@@ -106,12 +106,11 @@
       <template v-else>暂无作品，请先在「设置」中配置 ASMR 源路径并扫描。</template>
     </div>
 
-    <div v-else ref="gridRef" class="grid">
+    <div v-else class="grid">
       <WorkCard
         v-for="w in displayItems"
         :key="w.id"
         :work="w"
-        :highlight="w.id === highlightWorkId"
         @select-circle="(v) => addCond('circle', v)"
         @select-series="(v) => addCond('series', v)"
         @select-actor="(v) => addCond('actor', v)"
@@ -150,10 +149,7 @@ const series = ref<SeriesCount[]>([])
 const actors = ref<ActorCount[]>([])
 const tags = ref<TagCount[]>([])
 const recentPlays = ref<PlayRecord[]>([])
-const gridRef = ref<HTMLElement | null>(null)
 const recentRef = ref<HTMLElement | null>(null)
-/** 自动定位到的上次浏览作品（用导航栏颜色描边标识） */
-const highlightWorkId = ref<number | null>(null)
 
 const displayItems = computed(() => (store.randomMode ? store.randomItems : store.items))
 
@@ -305,32 +301,11 @@ function onRecentItemClick(rj: string) {
   goWork(rj)
 }
 
-let raf = 0
 function onScroll() {
   store.rememberScroll(window.scrollY)
   const doc = document.documentElement
   if (window.innerHeight + window.scrollY >= doc.scrollHeight - 300 && !store.randomMode) {
     store.loadMore()
-  }
-  if (!raf) {
-    raf = requestAnimationFrame(() => {
-      raf = 0
-      rememberTopWork()
-    })
-  }
-}
-
-/** 记录视口内最靠上的卡片，用于下次登录定位 */
-function rememberTopWork() {
-  const grid = gridRef.value
-  if (!grid || store.randomMode) return
-  const cards = grid.querySelectorAll<HTMLElement>('.work-card')
-  for (const el of cards) {
-    if (el.getBoundingClientRect().bottom > 0) {
-      const id = Number(el.id.replace('wc-', ''))
-      store.rememberTopWork(id || null)
-      return
-    }
   }
 }
 
@@ -350,7 +325,6 @@ async function onActivate() {
   } else {
     if (!store.loaded) store.applyPrefs(auth.user?.prefs)
     await store.fetch('replace')
-    await restorePosition()
     await loadRecent()
   }
 }
@@ -361,25 +335,6 @@ function onDeactivate() {
 }
 onActivated(onActivate)
 onDeactivated(onDeactivate)
-
-/** 定位到上一次浏览的作品（首次加载 / 登录后） */
-async function restorePosition() {
-  const lastId = store.lastWorkId
-  if (!lastId) return
-  let guard = 0
-  while (!store.items.some((w) => w.id === lastId) && store.hasMore && guard < 300) {
-    await store.loadMore()
-    guard++
-  }
-  await nextTick()
-  const el = document.getElementById(`wc-${lastId}`)
-  if (el) {
-    el.scrollIntoView({ block: 'start' })
-    window.scrollBy(0, -16)
-    // 命中后给该卡片加描边，让用户一眼看到「跳到了哪里」
-    highlightWorkId.value = lastId
-  }
-}
 
 // 条件/排序变化时回顶部
 watch(

@@ -452,7 +452,6 @@ function fmt(t: number): string {
   /* 与媒体库卡片 / 详情页同一套「类型标签」配色（可在设置里改） */
   background: var(--tag-genre-bg);
   color: var(--tag-genre-fg);
-  backdrop-filter: blur(var(--control-blur));
 }
 .fs-chip.chip-actor {
   background: var(--tag-actor-bg);
@@ -556,7 +555,6 @@ function fmt(t: number): string {
   bottom: 0;
   height: 55%;
   background: var(--panel);
-  backdrop-filter: blur(var(--card-blur));
   border-top: 1px solid var(--border);
   border-radius: 12px 12px 0 0;
   display: flex;

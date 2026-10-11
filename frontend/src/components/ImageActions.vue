@@ -40,12 +40,11 @@ const emit = defineEmits<{ (e: 'pick', kind: ImageActionKind): void }>()
   padding: 9px 14px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: rgba(38, 43, 51, 0.7);
+  background: var(--control-bg);
   color: var(--text);
   font-size: 14px;
   cursor: pointer;
   transition: all var(--anim-duration);
-  backdrop-filter: blur(var(--control-blur));
   white-space: nowrap;
 }
 .image-actions.vertical .act {

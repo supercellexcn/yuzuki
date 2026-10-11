@@ -1,7 +1,6 @@
 <template>
   <div
     class="work-card"
-    :class="{ highlight }"
     :id="'wc-' + work.id"
     @click="go"
     v-longpress="isMobile ? undefined : () => fav('work', work.rj_code)"
@@ -75,7 +74,7 @@ import { useFavorite } from '../composables/useFavorite'
 import { useIsMobile } from '../composables/useIsMobile'
 import { useFavoritesStore } from '../stores/favorites'
 
-const props = defineProps<{ work: Work; highlight?: boolean }>()
+const props = defineProps<{ work: Work }>()
 const emit = defineEmits<{
   (e: 'select-circle', name: string): void
   (e: 'select-series', name: string): void
@@ -107,24 +106,15 @@ function openFavPicker() {
   display: flex;
   flex-direction: column;
   /*
-   * 这里刻意不加 backdrop-filter：
-   * 1) 视觉上几乎无意义 —— 卡片背后只有壁纸，而壁纸已被「壁纸模糊」整层模糊过，
-   *    再叠一层 --card-blur 的模糊基本看不出来；
-   * 2) 它会强制每张卡片单独成为一个合成层（且带 backdrop root），与 overflow:hidden +
-   *    border-radius 的裁剪叠加后，离屏卡片在切换图片模式（整体布局变化）后滚动进视野时
-   *    容易出现「没有圆角 / 封面图不显示」的残影，需要再点一下才重绘；
-   * 3) 媒体库动辄几百张卡片，逐卡采样背景的代价也高。
-   * 磨砂效果仍由外层面板（设置卡片 / 顶部栏 / 详情页信息区 / 播放器）承担。
+   * 卡片本身不做磨砂（全站尺度上都不做，见 App.vue 的 --filelist-alpha 注释）。
+   * 除性能外还有一个具体原因：backdrop-filter 会强制每张卡片单独成为一个合成层，
+   * 与 overflow:hidden + border-radius 的裁剪叠加后，离屏卡片在切换图片模式（整体布局变化）
+   * 后滚动进视野时容易出现「没有圆角 / 封面图不显示」的残影，需要再点一下才重绘。
    */
 }
 .work-card:hover {
   transform: translateY(-2px);
   border-color: var(--accent);
-}
-/* 上次浏览定位到的作品：用「顶部导航栏颜色」描边标识 */
-.work-card.highlight {
-  border-color: var(--topbar-color, var(--accent));
-  box-shadow: 0 0 0 2px var(--topbar-color, var(--accent));
 }
 .cover {
   aspect-ratio: 1 / 1;
@@ -184,7 +174,6 @@ function openFavPicker() {
   color: var(--tag-genre-fg);
   cursor: pointer;
   transition: all var(--anim-duration);
-  backdrop-filter: blur(var(--control-blur));
 }
 .cover-tag:hover {
   background: var(--accent);
@@ -260,11 +249,11 @@ function openFavPicker() {
   font-size: 12px;
   padding: 3px 10px;
   border-radius: 999px;
-  background: rgba(38, 43, 51, 0.7);
+  /* 控件底色（透明度可在设置里改） */
+  background: var(--control-bg);
   color: #c3cbd7;
   cursor: pointer;
   transition: background var(--anim-duration);
-  backdrop-filter: blur(var(--control-blur));
 }
 .chip:hover {
   background: var(--accent);

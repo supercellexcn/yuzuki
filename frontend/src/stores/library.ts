@@ -28,9 +28,8 @@ export const useLibraryStore = defineStore('library', {
     randomMode: false,
     randomItems: [] as Work[],
     randomLoading: false,
+    /** 同一次会话内记住的滚动位置：从播放器返回媒体库时原地恢复（不落库） */
     scrollTop: 0,
-    lastWorkId: null as number | null,
-    prefsApplied: false,
   }),
   getters: {
     hasFilter(state): boolean {
@@ -154,10 +153,7 @@ export const useLibraryStore = defineStore('library', {
       this.q = prefs?.q || ''
       this.sort = (prefs?.sort as SortKey) || 'added'
       this.order = prefs?.order === 'asc' ? 'asc' : 'desc'
-      this.lastWorkId = prefs?.lastWorkId ?? null
-      this.scrollTop = prefs?.lastScrollTop || 0
       this.randomMode = false
-      this.prefsApplied = true
     },
     savePrefsSoon() {
       if (prefsTimer) clearTimeout(prefsTimer)
@@ -177,19 +173,12 @@ export const useLibraryStore = defineStore('library', {
         q: this.q,
         sort: this.sort,
         order: this.order,
-        lastWorkId: this.lastWorkId,
-        lastScrollTop: this.scrollTop,
       }
       savePrefs(prefs).catch(() => {})
     },
+    /** 记住当前滚动位置（仅本次会话内有效，供「从播放器返回」时恢复） */
     rememberScroll(top: number) {
       this.scrollTop = top
-      this.savePrefsSoon()
-    },
-    rememberTopWork(wid: number | null) {
-      if (wid === this.lastWorkId) return
-      this.lastWorkId = wid
-      this.savePrefsSoon()
     },
     /** 清空媒体库后重置本地列表，下次进入媒体库重新拉取（保留用户的筛选/排序条件）。 */
     resetLibraryData() {
@@ -201,7 +190,6 @@ export const useLibraryStore = defineStore('library', {
       this.randomMode = false
       this.randomItems = []
       this.scrollTop = 0
-      this.lastWorkId = null
     },
   },
 })

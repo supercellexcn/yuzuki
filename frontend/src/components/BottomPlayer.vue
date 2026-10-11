@@ -111,9 +111,8 @@ function fmt(t: number): string {
   bottom: 0;
   left: 0;
   right: 0;
-  /* 与全站一致：半透明 + 磨砂，主按钮/悬停框线跟随主题色（--accent） */
+  /* 与全站一致：半透明面板，主按钮/悬停框线跟随主题色（--accent） */
   background: var(--panel);
-  backdrop-filter: blur(var(--card-blur));
   border-top: 1px solid var(--border);
   z-index: 200;
   display: grid;

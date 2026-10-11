@@ -93,15 +93,14 @@ function onFav(it: { name: string; category?: string }) {
   gap: 5px;
   padding: 4px 11px;
   border-radius: 14px;
-  /* 半透明 + 磨砂，与全站控件一致 */
-  background: rgba(38, 43, 51, 0.7);
+  /* 控件底色（透明度可在设置里改），与全站一致 */
+  background: var(--control-bg);
   color: #d3d9e3;
   font-size: 14px;
   cursor: pointer;
   border: 1px solid transparent;
   transition: all var(--anim-duration);
   user-select: none;
-  backdrop-filter: blur(var(--control-blur));
 }
 .chip:hover {
   border-color: var(--accent);
