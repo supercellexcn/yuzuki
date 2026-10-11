@@ -24,7 +24,10 @@ interface PlayItem {
 
 export const usePlayerStore = defineStore('player', {
   state: () => ({
+    /** 当前活跃的音频元素 */
     audio: null as HTMLAudioElement | null,
+    /** 备用音频元素：预载下一首，换曲时顶上来播（见 play 里的说明） */
+    audioSpare: null as HTMLAudioElement | null,
     current: null as PlayItem | null,
     queue: [] as MediaFile[],
     loop: false,
@@ -41,61 +44,83 @@ export const usePlayerStore = defineStore('player', {
     mediaSessionReady: false,
   }),
   actions: {
+    /**
+     * 建一个隐藏的音频元素并挂好事件。
+     * 元素会 append 到文档里（隐藏）—— 放进文档比游离元素更稳，个别浏览器对游离元素
+     * 设置 src 会走额外的加载校验。
+     * 所有事件都判断「是不是当前活跃元素」：换曲时会暂停旧元素，它同样会触发 pause，
+     * 不加判断会把播放状态改错。
+     */
+    createAudio(): HTMLAudioElement {
+      const a = new Audio()
+      a.preload = 'metadata'
+      a.loop = this.loop
+      a.volume = this.volume
+      a.style.display = 'none'
+      document.body.appendChild(a)
+      a.addEventListener('timeupdate', () => {
+        if (a !== this.audio) return
+        this.currentTime = a.currentTime
+        // 锁屏进度条：节流到约 1 秒一次，避免每个 timeupdate 都写
+        const now = Date.now()
+        if (now - lastPositionSyncAt > 900) {
+          lastPositionSyncAt = now
+          this.syncPositionState()
+        }
+      })
+      a.addEventListener('durationchange', () => {
+        if (a !== this.audio) return
+        this.duration = a.duration || 0
+        this.syncPositionState()
+      })
+      a.addEventListener('play', () => {
+        if (a !== this.audio) return
+        this.playing = true
+      })
+      /*
+       * 「真正开始出声」的时机才声明媒体卡片与播放状态 —— 都在真实事件里更新，
+       * 不为了保住通知栏去强行置 state。
+       */
+      a.addEventListener('playing', () => {
+        if (a !== this.audio) return
+        this.playing = true
+        this.setMediaPlaybackState('playing')
+        this.applyMediaMetadata()
+        this.preloadNext()
+      })
+      a.addEventListener('pause', () => {
+        if (a !== this.audio) return
+        this.playing = false
+        this.setMediaPlaybackState('paused')
+      })
+      a.addEventListener('ended', () => {
+        if (a !== this.audio) return
+        this.playing = false
+        // 播完当前文件自动播放下一个（队列为空或已是最后一个则 next() 内部直接返回）
+        this.next()
+      })
+      a.addEventListener('error', () => {
+        if (a !== this.audio) return
+        this.playing = false
+      })
+      return a
+    },
     ensureAudio() {
       if (!this.audio) {
-        const a = new Audio()
-        a.preload = 'metadata'
-        a.loop = this.loop
-        a.addEventListener('timeupdate', () => {
-          this.currentTime = a.currentTime
-          // 锁屏进度条：节流到约 1 秒一次，避免每个 timeupdate 都写
-          const now = Date.now()
-          if (now - lastPositionSyncAt > 900) {
-            lastPositionSyncAt = now
-            this.syncPositionState()
-          }
-        })
-        a.addEventListener('durationchange', () => {
-          this.duration = a.duration || 0
-          this.syncPositionState()
-        })
-        a.addEventListener('play', () => {
-          this.playing = true
-        })
-        /*
-         * 媒体会话只在音频「真正开始出声」时才声明。
-         * Android 的媒体通知会在音频结束/换源时失效且重建不可靠，所以换曲时我们先在
-         * ended 里主动释放旧会话，等这一刻（新曲真正开始播放）再声明一次 ——
-         * 让系统把它当成一次干净的新会话，而不是同一个会话原地续命。
-         */
-        a.addEventListener('playing', () => {
-          this.setMediaPlaybackState('playing')
-          this.applyMediaMetadata()
-        })
-        a.addEventListener('pause', () => {
-          this.playing = false
-          this.setMediaPlaybackState('paused')
-        })
-        a.addEventListener('ended', () => {
-          this.playing = false
-          this.releaseMediaSession() // 先释放，稍后随新曲重建
-          // 播完当前文件自动播放下一个（队列为空或已是最后一个则 next() 内部直接返回）
-          this.next()
-        })
-        a.addEventListener('error', () => (this.playing = false))
-        a.volume = this.volume
-        this.audio = a
+        this.audio = this.createAudio()
+        this.audioSpare = this.createAudio()
         this.initMediaSession()
       }
       return this.audio
     },
     play(rj: string, file: MediaFile, work: Work | null, queue?: MediaFile[]) {
-      const a = this.ensureAudio()
+      this.ensureAudio()
+      const active = this.audio as HTMLAudioElement
       const url = mediaUrl(rj, file.id)
       // 同一文件：切换播放/暂停
       if (this.current?.url === url) {
-        if (a.paused) a.play()
-        else a.pause()
+        if (active.paused) active.play().catch((err: DOMException) => this.onPlayRejected(err))
+        else active.pause()
         return
       }
       if (queue && queue.length) this.queue = [...queue]
@@ -103,17 +128,59 @@ export const usePlayerStore = defineStore('player', {
       // 保留已加载的作品信息，避免封面/标题一闪而空
       const keepWork = work || (this.current?.rj === rj ? this.current.work : null)
       this.current = { rj, file, work: keepWork, url }
-      // 媒体卡片不在这里写：等 playing 事件（音频真正出声）时再声明，见 ensureAudio
-      a.src = url
-      // play() 返回 Promise：被拒绝（自动播放策略 / 加载被中断）时过去是静默失败，
-      // 表现就是「播完一首后不切下一首、也不报错」。这里把原因打出来便于排查。
-      a.play().catch((err: DOMException) => {
-        // 快速切歌时上一次 play() 会以 AbortError 结束，属正常情况
-        if (err?.name === 'AbortError') return
-        this.playing = false
-        console.warn('[player] 播放被拒绝：', err?.name, err?.message)
-      })
+      this.applyMediaMetadata()
+
+      /*
+       * 换曲改用「另一个音频元素」来播，而不是给正在播的元素换 src。
+       * 复用同一元素换 src 时，Android 会把媒体通知撤掉且不再重建（Chromium 已知问题，
+       * Google 官方 Media Session 示例的写法同样会触发）；而「另一个元素开始播放」相当于
+       * 一次全新的媒体播放，系统才会像首次播放那样重新给出通知。
+       * 先把引用换好再 play()，这样事件里「是不是活跃元素」的判断才能通过。
+       */
+      const next = this.audioSpare as HTMLAudioElement
+      const prev = active
+      this.audio = next
+      this.audioSpare = prev
+      // 已预载同一首时不要重复赋值（会重新触发加载、白费掉预载）
+      if (next.src !== new URL(url, window.location.origin).href) next.src = url
+      next.play().catch((err: DOMException) => this.onPlayRejected(err))
+      /*
+       * 新元素真正出声后再停旧元素：避免出现「两个都不播」的空窗 —— 通知正是在那时被撤掉。
+       * 停之前都要确认它「已经不是活跃元素」：只有两个元素轮换，连点几次切歌时同一个元素
+       * 可能又被换回活跃位置，此时把它 pause 掉会误停正在播的那一首。
+       */
+      const stopPrevIfIdle = () => {
+        if (prev !== this.audio && !prev.paused) prev.pause()
+      }
+      if (!prev.paused) {
+        next.addEventListener('playing', stopPrevIfIdle, { once: true })
+        // 兜底：万一 playing 没触发，也不能让两个元素同时出声
+        setTimeout(stopPrevIfIdle, 1500)
+      }
       this.record(rj, file.id)
+    },
+    /** play() 的 Promise 被拒绝时记录原因（过去是静默失败，表现就是「不切歌也不报错」）。 */
+    onPlayRejected(err: DOMException) {
+      // 快速切歌时上一次 play() 会以 AbortError 结束，属正常情况
+      if (err?.name === 'AbortError') return
+      this.playing = false
+      console.warn('[player] 播放被拒绝：', err?.name, err?.message)
+    },
+    /** 把队列里的下一首预载到备用元素，换曲时几乎没有加载间隙。 */
+    preloadNext() {
+      const cur = this.current
+      const spare = this.audioSpare
+      if (!cur || !spare) return
+      const idx = this.queue.findIndex((f) => f.id === cur.file.id)
+      const nextFile = idx >= 0 ? this.queue[idx + 1] : undefined
+      if (!nextFile) {
+        spare.removeAttribute('src')
+        return
+      }
+      const rel = mediaUrl(cur.rj, nextFile.id)
+      if (spare.src === new URL(rel, window.location.origin).href) return // 已经是它了
+      spare.preload = 'auto'
+      spare.src = rel
     },
     /** 上一曲（在当前作品的播放队列内） */
     prev() {
@@ -139,12 +206,14 @@ export const usePlayerStore = defineStore('player', {
     },
     toggleLoop() {
       this.loop = !this.loop
+      // 两个元素都要同步，否则换曲后循环设置会丢
       if (this.audio) this.audio.loop = this.loop
+      if (this.audioSpare) this.audioSpare.loop = this.loop
     },
     toggle() {
       const a = this.audio
       if (!a || !this.current) return
-      if (a.paused) a.play()
+      if (a.paused) a.play().catch((err: DOMException) => this.onPlayRejected(err))
       else a.pause()
     },
     seek(t: number) {
@@ -153,14 +222,16 @@ export const usePlayerStore = defineStore('player', {
     },
     setVolume(v: number) {
       this.volume = v
+      // 两个元素都要同步，否则换曲后音量会跳回旧值
       if (this.audio) this.audio.volume = v
+      if (this.audioSpare) this.audioSpare.volume = v
     },
     stop() {
-      const a = this.audio
-      if (a) {
-        a.pause()
-        a.removeAttribute('src')
-        a.load()
+      for (const el of [this.audio, this.audioSpare]) {
+        if (!el) continue
+        el.pause()
+        el.removeAttribute('src')
+        el.load()
       }
       this.current = null
       this.queue = []
@@ -271,7 +342,7 @@ export const usePlayerStore = defineStore('player', {
           : [],
       })
     },
-    /** 释放媒体会话：清空卡片并把播放状态置为 none（通知随之收起）。换曲时先断开旧会话用。 */
+    /** 释放媒体会话：清空卡片并把播放状态置为 none（通知随之收起）。仅用于 stop()。 */
     releaseMediaSession() {
       if (!mediaSessionSupported()) return
       navigator.mediaSession.metadata = null
