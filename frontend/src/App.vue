@@ -290,7 +290,14 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
-  backdrop-filter: blur(var(--card-blur));
+  /*
+   * 这里刻意不加 backdrop-filter：
+   * 1) 顶栏背后只有壁纸，而壁纸已被「壁纸模糊」整层模糊过，再叠一层看不出差别；
+   * 2) 更关键 —— 顶栏一旦有 backdrop-filter，就会给后代建立 backdrop root，
+   *    使「点 admin 弹出的用户菜单」的 backdrop-filter 只能在该 root 内取样（那里什么都没有），
+   *    于是菜单的磨砂完全失效（实测：去掉这里，菜单立刻正常变模糊）。
+   * 需要磨砂的顶栏内弹层自己带 backdrop-filter 即可。
+   */
 }
 .brand {
   font-weight: 700;
