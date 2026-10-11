@@ -1,7 +1,15 @@
 import { getDb } from './db/connection.js'
 
+/**
+ * 可参与「聚合筛选」的条件类型。
+ * 必须与 routes/works.ts 的 parseConds 支持的类型一致 —— 这里少一种，
+ * 前端加的那种筛选条件（如 series）就会在保存界面记忆时被静默丢掉，下次登录也就不见了。
+ */
+export const FILTER_COND_TYPES = ['circle', 'series', 'actor', 'tag'] as const
+export type FilterCondType = (typeof FILTER_COND_TYPES)[number]
+
 export interface FilterCond {
-  type: 'circle' | 'actor' | 'tag'
+  type: FilterCondType
   value: string
 }
 
@@ -54,7 +62,7 @@ export function savePrefs(userId: number, patch: Partial<Prefs>): Prefs {
   // 规整条件：最多 5 个
   next.conditions = (Array.isArray(patch.conditions) ? patch.conditions : cur.conditions)
     .map((c) => ({ type: c.type, value: String(c.value).trim() }))
-    .filter((c) => c.value && (c.type === 'circle' || c.type === 'actor' || c.type === 'tag'))
+    .filter((c) => c.value && FILTER_COND_TYPES.includes(c.type))
     .slice(0, 5)
   next.q = String(patch.q ?? cur.q ?? '').trim()
   next.sort = SORTS.includes(String(next.sort)) ? next.sort : 'added'
