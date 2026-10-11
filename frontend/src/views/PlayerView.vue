@@ -113,6 +113,7 @@
       placement="bottom-start"
       :width="180"
       popper-class="image-action-popper"
+      :arrow-offset="18"
     >
       <ImageActions menu @pick="runImageAction" />
     </el-popover>
@@ -129,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getWork, authedUrl, getRecommendations } from '../api'
 import { CUSTOM_TAG } from '../api/types'
@@ -277,6 +278,29 @@ function openImageActions(f: MediaFile, ev?: PointerEvent) {
   if (ev) actionPos.value = { x: ev.clientX, y: ev.clientY }
   actionVisible.value = true
 }
+
+/**
+ * 点弹层以外的地方 / 按 Esc → 收起动作菜单。
+ * 用 virtual-triggering 时 el-popover 不会自己装「点击外部关闭」（那套逻辑挂在
+ * 触发元素上，而我们的触发元素是个虚拟点），所以这里手动处理。
+ * 用捕获阶段：先于其它 pointerdown 处理，避免与长按指令的拦截相互打架。
+ */
+function onGlobalPointerDown(e: PointerEvent) {
+  if (!actionVisible.value) return
+  if ((e.target as HTMLElement | null)?.closest('.image-action-popper')) return
+  actionVisible.value = false
+}
+function onGlobalKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') actionVisible.value = false
+}
+onMounted(() => {
+  document.addEventListener('pointerdown', onGlobalPointerDown, true)
+  document.addEventListener('keydown', onGlobalKeydown)
+})
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', onGlobalPointerDown, true)
+  document.removeEventListener('keydown', onGlobalKeydown)
+})
 
 /** 动作改动后给封面 URL 加时间戳，让页面上的封面立即刷新（缓存击穿）。 */
 function refreshCover() {
