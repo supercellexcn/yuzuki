@@ -80,7 +80,7 @@ settingsRouter.put('/', (req, res) => {
   }
 })
 
-const MAX_DEFAULT_COVER_BYTES = 10 * 1024 * 1024 // 10MB
+const MAX_DEFAULT_COVER_BYTES = 50 * 1024 * 1024 // 50MB
 
 // GET /api/settings/default-cover —— 返回当前默认封面（作品无封面时的兜底图）
 settingsRouter.get('/default-cover', (_req, res) => {
@@ -91,7 +91,7 @@ settingsRouter.get('/default-cover', (_req, res) => {
   })
 })
 
-// POST /api/settings/default-cover —— 上传默认封面 { data: base64, ext: 'jpg'|'jpeg'|'png' }，≤10MB
+// POST /api/settings/default-cover —— 上传默认封面 { data: base64, ext: 'jpg'|'jpeg'|'png' }，≤50MB
 settingsRouter.post('/default-cover', (req, res) => {
   const data = String(req.body?.data || '')
   let ext = String(req.body?.ext || '').toLowerCase().replace('.', '')
@@ -105,7 +105,7 @@ settingsRouter.post('/default-cover', (req, res) => {
     return res.status(400).json({ error: '无效的图片数据' })
   }
   if (buf.length === 0) return res.status(400).json({ error: '图片数据为空' })
-  if (buf.length > MAX_DEFAULT_COVER_BYTES) return res.status(400).json({ error: '图片超过 10MB 限制' })
+  if (buf.length > MAX_DEFAULT_COVER_BYTES) return res.status(400).json({ error: '图片超过 50MB 限制' })
 
   removeDefaultCover() // 先清掉旧扩展名的默认封面，保证同名唯一
   fs.writeFileSync(path.join(getCoverDir(), `common-cover.${ext}`), buf)
@@ -121,7 +121,7 @@ settingsRouter.delete('/default-cover', (_req, res) => {
 
 // ---- 壁纸（桌面端 / 移动端各一张）----
 
-const MAX_WALLPAPER_BYTES = 10 * 1024 * 1024 // 10MB
+const MAX_WALLPAPER_BYTES = 50 * 1024 * 1024 // 50MB
 
 /** 解析并校验 :kind 路径参数。 */
 function parseKind(raw: unknown): WallpaperKind | null {
@@ -140,7 +140,7 @@ settingsRouter.get('/wallpaper/:kind', (req, res) => {
   })
 })
 
-// POST /api/settings/wallpaper/:kind —— 上传壁纸 { data: base64, ext }，≤10MB
+// POST /api/settings/wallpaper/:kind —— 上传壁纸 { data: base64, ext }，≤50MB
 settingsRouter.post('/wallpaper/:kind', (req, res) => {
   const kind = parseKind(req.params.kind)
   if (!kind) return res.status(400).json({ error: 'invalid kind' })
@@ -159,7 +159,7 @@ settingsRouter.post('/wallpaper/:kind', (req, res) => {
     return res.status(400).json({ error: '无效的图片数据' })
   }
   if (buf.length === 0) return res.status(400).json({ error: '图片数据为空' })
-  if (buf.length > MAX_WALLPAPER_BYTES) return res.status(400).json({ error: '图片超过 10MB 限制' })
+  if (buf.length > MAX_WALLPAPER_BYTES) return res.status(400).json({ error: '图片超过 50MB 限制' })
 
   removeWallpaper(kind) // 先清掉旧扩展名，保证同名唯一
   fs.writeFileSync(path.join(getWallpaperDir(), `wallpaper-${kind}.${ext}`), buf)

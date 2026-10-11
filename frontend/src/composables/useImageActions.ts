@@ -15,8 +15,8 @@ export const IMAGE_ACTIONS: Array<{ kind: ImageActionKind; label: string; icon: 
   { kind: 'wallpaper-mobile', label: '移动壁纸', icon: '📱' },
 ]
 
-/** 壁纸接口的体积上限（与后端一致，10MB）。 */
-const MAX_WALLPAPER_BYTES = 10 * 1024 * 1024
+/** 壁纸接口的体积上限（与后端一致，50MB）。 */
+const MAX_WALLPAPER_BYTES = 50 * 1024 * 1024
 
 /** 把作品里的某张图片读成 base64 —— 壁纸接口只接受 base64 JSON。 */
 async function fetchImageBase64(rj: string, file: MediaFile): Promise<{ data: string; ext: string }> {
@@ -24,7 +24,7 @@ async function fetchImageBase64(rj: string, file: MediaFile): Promise<{ data: st
   if (!res.ok) throw new Error(`读取图片失败（HTTP ${res.status}）`)
   const blob = await res.blob()
   if (blob.size > MAX_WALLPAPER_BYTES) {
-    throw new Error(`图片 ${(blob.size / 1024 / 1024).toFixed(1)}MB，超过壁纸 10MB 上限`)
+    throw new Error(`图片 ${(blob.size / 1024 / 1024).toFixed(1)}MB，超过壁纸 50MB 上限`)
   }
   const ext = blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg'
   const data = await new Promise<string>((resolve, reject) => {

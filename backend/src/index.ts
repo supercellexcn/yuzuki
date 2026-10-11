@@ -38,8 +38,9 @@ seedAdmin() // 首次启动创建默认 admin / 123456
 
 const app = express()
 app.use(cors())
-// 20MB 上限：默认封面以 base64 JSON 上传（10MB 图片 ≈ 13.3MB base64）
-app.use(express.json({ limit: '20mb' }))
+// 75MB 上限：默认封面 / 壁纸以 base64 JSON 上传，图片上限 50MB，
+// base64 后约膨胀到 66.7MB，所以请求体上限要留出余量（与前端 nginx 的 client_max_body_size 对齐）
+app.use(express.json({ limit: '75mb' }))
 
 // 公开接口：健康检查 + 登录
 app.get('/api/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }))

@@ -128,7 +128,7 @@ export async function saveSettings(patch: Partial<AppSettings>): Promise<AppSett
 }
 
 // ---- 默认封面（作品无封面时兜底） ----
-/** 上传默认封面（base64 图片数据 + 扩展名，≤10MB）。 */
+/** 上传默认封面（base64 图片数据 + 扩展名，≤50MB）。 */
 export async function uploadDefaultCover(data: string, ext: string): Promise<{ ok: boolean; ext: string }> {
   const { data: res } = await http.post('/settings/default-cover', { data, ext })
   return res
@@ -155,7 +155,7 @@ export function defaultCoverUrl(): string {
 }
 
 // ---- 壁纸（桌面端 / 移动端分别上传）----
-/** 上传壁纸（base64 图片数据 + 扩展名，≤10MB）。 */
+/** 上传壁纸（base64 图片数据 + 扩展名，≤50MB）。 */
 export async function uploadWallpaper(
   kind: WallpaperKind,
   data: string,

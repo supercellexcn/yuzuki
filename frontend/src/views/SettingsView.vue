@@ -59,7 +59,7 @@
 
     <div class="card">
       <div class="card-title">默认封面（无封面作品兜底）</div>
-      <div class="hint">上传一张图片（jpg / png，≤10MB）。没有封面的作品会用此图作为封面。</div>
+      <div class="hint">上传一张图片（jpg / png，≤50MB）。没有封面的作品会用此图作为封面。</div>
       <div v-if="hasDefaultCover" class="def-cover">
         <img :src="defaultCoverUrl()" alt="默认封面" />
       </div>
@@ -520,13 +520,13 @@ function pickCoverFile() {
   coverFileInput.value?.click()
 }
 
-/** 图片上传上限，与后端（10MB）保持一致：前端先拦一次，免得白传一趟才吃 413。 */
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+/** 图片上传上限，与后端（50MB）保持一致：前端先拦一次，免得白传一趟才吃 413。 */
+const MAX_IMAGE_BYTES = 50 * 1024 * 1024
 
 /** 上传前校验体积，超限给出明确提示。 */
 function checkImageSize(file: File): boolean {
   if (file.size <= MAX_IMAGE_BYTES) return true
-  ElMessage.error(`图片 ${(file.size / 1024 / 1024).toFixed(1)}MB，超过 10MB 上限`)
+  ElMessage.error(`图片 ${(file.size / 1024 / 1024).toFixed(1)}MB，超过 50MB 上限`)
   return false
 }
 
@@ -554,7 +554,7 @@ async function onCoverFileChange(e: Event) {
       hasDefaultCover.value = true
       ElMessage.success('默认封面上传成功')
     } catch (err) {
-      ElMessage.error('上传失败：' + apiErrorMessage(err, '图片可能超过 10MB'))
+      ElMessage.error('上传失败：' + apiErrorMessage(err, '图片可能超过 50MB'))
     }
   }
   reader.readAsDataURL(file)
@@ -718,7 +718,7 @@ async function onWallpaperFileChange(e: Event) {
       await refreshWallpaperState()
       ElMessage.success('壁纸已上传')
     } catch (err) {
-      ElMessage.error('上传失败：' + apiErrorMessage(err, '图片可能超过 10MB'))
+      ElMessage.error('上传失败：' + apiErrorMessage(err, '图片可能超过 50MB'))
     }
   }
   reader.readAsDataURL(file)
