@@ -291,13 +291,20 @@ body {
   top: 0;
   z-index: 100;
   /*
-   * 这里刻意不加 backdrop-filter：
-   * 1) 顶栏背后只有壁纸，而壁纸已被「壁纸模糊」整层模糊过，再叠一层看不出差别；
-   * 2) 更关键 —— 顶栏一旦有 backdrop-filter，就会给后代建立 backdrop root，
-   *    使「点 admin 弹出的用户菜单」的 backdrop-filter 只能在该 root 内取样（那里什么都没有），
-   *    于是菜单的磨砂完全失效（实测：去掉这里，菜单立刻正常变模糊）。
-   * 需要磨砂的顶栏内弹层自己带 backdrop-filter 即可。
+   * 顶栏自身的磨砂**不写在这里**，而是放在下面的 ::before 上。
+   * 原因：.topbar 一旦自己带 backdrop-filter，就会给后代建立 backdrop root，
+   * 使「点 admin 弹出的用户菜单」的 backdrop-filter 只能在该 root 内取样（那里什么都没有），
+   * 菜单的磨砂就完全失效（已用渲染实验确认）。伪元素没有后代，不会造成这个问题。
    */
+}
+/* 顶栏磨砂层：铺满顶栏、位于内容之下，只负责把背后的内容糊掉 */
+.topbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  backdrop-filter: blur(var(--card-blur));
 }
 .brand {
   font-weight: 700;
