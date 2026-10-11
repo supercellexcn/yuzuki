@@ -7,8 +7,11 @@ const MOVE_THRESHOLD = 8
 /** 长按触发后吞掉紧随 click 的窗口（毫秒） */
 const CLICK_SUPPRESS_MS = 600
 
+/** 长按回调；会收到触发长按的那次 pointerdown 事件（可用于取坐标定位弹层）。 */
+type LongPressHandler = (e?: PointerEvent) => void
+
 interface LongPressState {
-  handler: (() => void) | undefined
+  handler: LongPressHandler | undefined
   timer: ReturnType<typeof setTimeout> | null
   suppressTimer: ReturnType<typeof setTimeout> | null
   startX: number
@@ -31,7 +34,7 @@ const states = new WeakMap<HTMLElement, LongPressState>()
  * - `touch-action: manipulation` 减少浏览器手势（双击缩放/滚动判定）对长按的干扰。
  * - 拦截器带清理超时，防止用户长按后一直按住导致下一次无关点击被误吞。
  */
-export const longpress: Directive<HTMLElement, (() => void) | undefined> = {
+export const longpress: Directive<HTMLElement, LongPressHandler | undefined> = {
   mounted(el, binding) {
     const state: LongPressState = {
       handler: binding.value,
@@ -110,7 +113,7 @@ export const longpress: Directive<HTMLElement, (() => void) | undefined> = {
           window.removeEventListener('click', suppressClick, { capture: true })
           state.suppressTimer = null
         }, CLICK_SUPPRESS_MS)
-        handler()
+        handler(e)
         // 注意：不在这里 cleanup —— 保持 contextmenu 拦截与 onUp/onTouchEnd 抑制直到手指/鼠标松开
       }, LONG_PRESS_MS)
 

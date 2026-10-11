@@ -105,14 +105,16 @@
       </template>
     </template>
 
-    <!-- 长按文件列表里的图片 → 选择要执行的动作 -->
-    <div v-if="actionTarget" class="sheet-mask" @click.self="actionTarget = null">
-      <div class="sheet">
-        <div class="sheet-title" :title="actionTarget.filename">{{ actionTarget.filename }}</div>
-        <ImageActions vertical @pick="runImageAction" />
-        <button class="sheet-cancel" type="button" @click="actionTarget = null">取消</button>
-      </div>
-    </div>
+    <!-- 长按文件列表里的图片 → 在按下的位置就地弹出动作菜单（与筛选弹框同形态） -->
+    <el-popover
+      v-model:visible="actionVisible"
+      :virtual-ref="actionVirtualRef"
+      virtual-triggering
+      placement="bottom-start"
+      :width="170"
+    >
+      <ImageActions menu @pick="runImageAction" />
+    </el-popover>
 
     <ImageViewer
       :rj="rj"
@@ -248,9 +250,31 @@ function openImage(f: MediaFile) {
 // ---- 图片动作：设为封面 / 桌面壁纸 / 移动壁纸 ----
 /** 长按图片时待选的动作目标 */
 const actionTarget = ref<MediaFile | null>(null)
+/** 动作菜单是否显示 */
+const actionVisible = ref(false)
+/** 长按按下的位置（视口坐标），用作 popover 的虚拟触发点 */
+const actionPos = ref({ x: 0, y: 0 })
 
-function openImageActions(f: MediaFile) {
+/** el-popover 的虚拟触发点：一个零尺寸矩形，定位在长按处。 */
+const actionVirtualRef = computed(() => ({
+  getBoundingClientRect: () =>
+    ({
+      top: actionPos.value.y,
+      left: actionPos.value.x,
+      bottom: actionPos.value.y,
+      right: actionPos.value.x,
+      x: actionPos.value.x,
+      y: actionPos.value.y,
+      width: 0,
+      height: 0,
+      toJSON: () => ({}),
+    }) as DOMRect,
+}))
+
+function openImageActions(f: MediaFile, ev?: PointerEvent) {
   actionTarget.value = f
+  if (ev) actionPos.value = { x: ev.clientX, y: ev.clientY }
+  actionVisible.value = true
 }
 
 /** 动作改动后给封面 URL 加时间戳，让页面上的封面立即刷新（缓存击穿）。 */
@@ -258,10 +282,10 @@ function refreshCover() {
   if (work.value) work.value.cover_url = `/api/cover/${work.value.rj_code}?v=${Date.now()}`
 }
 
-/** 长按弹出层里选中动作后执行，随后刷新封面。 */
+/** 菜单里选中动作后执行，随后刷新封面。 */
 async function runImageAction(kind: ImageActionKind) {
   const f = actionTarget.value
-  actionTarget.value = null
+  actionVisible.value = false // 先收起菜单，再弹二次确认
   if (!f || !work.value) return
   if (await runImageActionRaw(kind, work.value.rj_code, f)) refreshCover()
 }
@@ -485,49 +509,5 @@ function onRecPointerDown(e: PointerEvent) {
   .cover {
     width: 160px;
   }
-}
-/* 长按图片 → 底部弹层选择动作 */
-.sheet-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-.sheet {
-  width: 100%;
-  max-width: 480px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px 16px 20px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-bottom: none;
-  border-radius: 16px 16px 0 0;
-  backdrop-filter: blur(var(--card-blur));
-}
-.sheet-title {
-  font-size: 14px;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sheet-cancel {
-  padding: 10px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--muted);
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.12s;
-}
-.sheet-cancel:hover {
-  color: var(--text);
-  border-color: var(--accent);
 }
 </style>

@@ -319,9 +319,11 @@ function fmt(t: number): string {
 /* 自带壁纸层：做法与整站 body::before 一致，外扩一圈避免模糊后边缘露底 */
 .fs-bg {
   position: absolute;
-  inset: -48px;
-  /* 与整站同理：钉死高度，避免软键盘/地址栏改变视口高度时取景跳动 */
-  height: calc(100vh + 96px);
+  /* 与整站同理：尺寸用 JS 算好的像素值，避免软键盘改变视口高度时取景跳动 */
+  top: -48px;
+  left: -48px;
+  width: var(--wallpaper-w, calc(100% + 96px));
+  height: var(--wallpaper-h, calc(100vh + 96px));
   z-index: 0;
   background-image: var(--wallpaper-image);
   background-size: cover;

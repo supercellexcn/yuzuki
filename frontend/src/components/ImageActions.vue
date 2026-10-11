@@ -1,5 +1,5 @@
 <template>
-  <div class="image-actions" :class="{ vertical }">
+  <div class="image-actions" :class="{ vertical, menu }">
     <button
       v-for="a in IMAGE_ACTIONS"
       :key="a.kind"
@@ -17,7 +17,7 @@
 <script setup lang="ts">
 import { IMAGE_ACTIONS, type ImageActionKind } from '../composables/useImageActions'
 
-defineProps<{ vertical?: boolean; busy?: boolean }>()
+defineProps<{ vertical?: boolean; busy?: boolean; menu?: boolean }>()
 const emit = defineEmits<{ (e: 'pick', kind: ImageActionKind): void }>()
 </script>
 
@@ -62,5 +62,26 @@ const emit = defineEmits<{ (e: 'pick', kind: ImageActionKind): void }>()
 .icon {
   font-size: 15px;
   line-height: 1;
+}
+
+/* 作为弹层菜单使用：无边框行 + 悬停高亮，形态与筛选弹框一致 */
+.image-actions.menu {
+  flex-direction: column;
+  gap: 2px;
+  justify-content: stretch;
+}
+.image-actions.menu .act {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 14px;
+  color: var(--text);
+}
+.image-actions.menu .act:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 </style>

@@ -97,6 +97,30 @@ function setVar(name: string, value: string): void {
   else root.style.removeProperty(name)
 }
 
+// 上一次算出的壁纸尺寸（像素）与见过的最大高度。见 syncWallpaperSize 的说明。
+let lastWallpaperW = 0
+let maxWallpaperH = 0
+
+/**
+ * 用像素给壁纸层定尺寸，而不是用 vh / inset 推导。
+ *
+ * 移动端弹出软键盘时视口高度会变小：若壁纸高度跟着变，background-size: cover 会重新
+ * 取景，看起来就像「壁纸往上跳」。所以这里只在「宽度变了」或「高度变大」时才更新
+ * —— 键盘只会让高度变小，这类变化被忽略；旋转屏幕（宽度变化）与地址栏收起（高度变大）
+ * 仍会正常更新。用像素也绕开了部分移动浏览器把 vh 当作动态视口的差异。
+ */
+function syncWallpaperSize(): void {
+  if (typeof window === 'undefined') return
+  const w = document.documentElement.clientWidth // 不含滚动条，避免把页面撑出横向滚动
+  const h = window.innerHeight
+  if (w === lastWallpaperW && h <= maxWallpaperH) return
+  lastWallpaperW = w
+  maxWallpaperH = Math.max(maxWallpaperH, h)
+  const root = document.documentElement
+  root.style.setProperty('--wallpaper-w', `${lastWallpaperW + 96}px`) // +96 = 外扩一圈的余量
+  root.style.setProperty('--wallpaper-h', `${maxWallpaperH + 96}px`)
+}
+
 export function useAppearance() {
   const settings = useSettingsStore()
   const isMobile = useIsMobile()
@@ -200,6 +224,9 @@ export function useAppearance() {
   if (!wired) {
     wired = true
     let wallpapersChecked = false
+    // 壁纸层尺寸：初始化一次，之后只在宽度变化 / 高度变大时更新（键盘导致的变矮会被忽略）
+    syncWallpaperSize()
+    window.addEventListener('resize', syncWallpaperSize)
     /**
      * 首次拿到设置（且已登录）时探测壁纸。启动时可能还没登录，
      * 这里不早退，等登录后设置加载完成、watcher 再次触发时再补探测。

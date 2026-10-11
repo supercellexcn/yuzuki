@@ -189,15 +189,16 @@ function scrollToTop() {
 body::before {
   content: '';
   position: fixed;
-  inset: -48px;
   /*
-   * 高度钉死，不跟随布局视口变化。
-   * 移动端弹出软键盘（以及地址栏收放）会改变布局视口高度，`inset` 推导出的高度跟着变，
-   * background-size: cover 就会重新缩放取景，看起来像「壁纸往上移了」。
-   * 100vh 在移动端等于「大视口」，不随键盘/地址栏变化，所以封面取景保持稳定。
-   * 同时给了 top/bottom 和 height 时 bottom 会被忽略，即固定贴顶 + 固定高度。
+   * 尺寸由 JS 算成像素（见 composables/useAppearance.ts 的 syncWallpaperSize）。
+   * 移动端弹软键盘会让视口高度变小；若这里用 vh / inset 推导高度，壁纸就会跟着变矮，
+   * background-size: cover 重新取景 —— 看起来就像「壁纸往上跳」。
+   * 兜底用 vh / 百分比，保证 JS 跑到之前也有背景。
    */
-  height: calc(100vh + 96px);
+  top: -48px;
+  left: -48px;
+  width: var(--wallpaper-w, calc(100% + 96px));
+  height: var(--wallpaper-h, calc(100vh + 96px));
   z-index: -1;
   background-image: var(--wallpaper-image);
   background-size: cover;
