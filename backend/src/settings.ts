@@ -62,6 +62,8 @@ export interface AppSettings {
   theme_color_tag: string
   // 声优 / 类型标签的不透明度（1-100，越小越透）
   tag_opacity: number
+  // 全局动画时长（秒，0-1）。0 表示关闭动画；所有界面动画都以它为准。
+  animation_duration: number
 }
 
 const DEFAULTS: AppSettings = {
@@ -105,6 +107,7 @@ const DEFAULTS: AppSettings = {
   theme_color_actor: '#7BC86C',
   theme_color_tag: '#F2A65A',
   tag_opacity: 62,
+  animation_duration: 0.25,
 }
 
 /** 把任意输入收敛到 [0,1]，非法则返回默认值。 */
@@ -194,6 +197,11 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
   next.theme_color_tag = normalizeColor(patch.theme_color_tag ?? cur.theme_color_tag, DEFAULTS.theme_color_tag)
   // 标签不透明度：1-100（不允许 0，完全透明会让标签文字也跟着看不见）
   next.tag_opacity = Math.max(1, clampPercent(patch.tag_opacity ?? cur.tag_opacity, DEFAULTS.tag_opacity))
+  // 动画时长：0-1 秒（0 合法 = 关闭动画，所以不能用 `|| 默认值`）
+  const anim = Number(patch.animation_duration ?? cur.animation_duration)
+  next.animation_duration = Number.isFinite(anim)
+    ? Math.max(0, Math.min(1, Math.round(anim * 100) / 100))
+    : DEFAULTS.animation_duration
 
   const stmt = getDb().prepare(
     'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'

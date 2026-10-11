@@ -121,6 +121,8 @@ export interface AppSettings {
   theme_color_tag: string
   /** 声优 / 类型标签的不透明度（1-100，越小越透） */
   tag_opacity: number
+  /** 全局动画时长（秒，0-1）。0 表示关闭动画。 */
+  animation_duration: number
 }
 
 export interface TagCount {

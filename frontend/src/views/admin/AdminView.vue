@@ -86,7 +86,7 @@ watch(isMobile, (m) => {
   font-weight: 600;
   color: #b9c2cf;
   border-radius: 8px 8px 0 0;
-  transition: color 0.15s, background 0.15s;
+  transition: color var(--anim-duration), background var(--anim-duration);
 }
 .tabs :deep(.el-tabs__item:hover) {
   color: var(--text);

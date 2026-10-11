@@ -407,7 +407,7 @@ function onRecPointerDown(e: PointerEvent) {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--anim-duration);
   backdrop-filter: blur(var(--control-blur));
 }
 .back-btn:hover {

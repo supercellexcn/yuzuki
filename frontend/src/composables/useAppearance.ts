@@ -34,6 +34,9 @@ const DEFAULT_TAG_COLOR = '#f2a65a'
 /** 标签文字统一用白色（不再按底色亮度自动取深色）。 */
 const TAG_FG = '#ffffff'
 
+/** 全局动画时长默认值（秒），与样式表兜底值、后端默认值保持一致。 */
+const DEFAULT_ANIM_SECONDS = 0.25
+
 /** 各类颜色的不透明度：导航栏留一点透，标签透得更明显。 */
 const NAV_ALPHA = 0.75
 /** 标签不透明度在设置里的默认值（1-100），与样式表兜底值保持一致。 */
@@ -147,6 +150,12 @@ export function useAppearance() {
 
     const width = s.card_size === 'custom' ? s.card_width : CARD_MIN_WIDTH[s.card_size]
     root.style.setProperty('--card-min-width', `${width}px`)
+
+    // 全局动画时长：所有界面动画/过渡都读这个变量（0 就是关闭动画）。
+    // 校验一次，避免设置里存了非法值时整个界面失去过渡。
+    const anim = Number(s.animation_duration)
+    const animSec = Number.isFinite(anim) ? Math.max(0, Math.min(1, anim)) : DEFAULT_ANIM_SECONDS
+    root.style.setProperty('--anim-duration', `${animSec}s`)
 
     // ---- 主题色：导航栏 + 全站强调色（hover 框线 / 播放条 / 选中态…）----
     const nav = s.theme_color_nav

@@ -189,7 +189,7 @@ function fmt(t: number): string {
   cursor: pointer;
   flex-shrink: 0;
   font-size: 13px;
-  transition: all 0.12s;
+  transition: all var(--anim-duration);
   display: inline-flex;
   align-items: center;
   justify-content: center;

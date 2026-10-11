@@ -99,7 +99,7 @@ function onFav(it: { name: string; category?: string }) {
   font-size: 14px;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: all 0.12s;
+  transition: all var(--anim-duration);
   user-select: none;
   backdrop-filter: blur(var(--control-blur));
 }

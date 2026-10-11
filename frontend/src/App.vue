@@ -162,6 +162,9 @@ function scrollToTop() {
   --filelist-blur: 2px;
   --control-blur: 1px;
   --card-min-width: 180px;
+  /* 全局动画时长：所有 transition/animation 都读它（由 useAppearance 按设置覆盖）。
+     0s 即关闭动画。 */
+  --anim-duration: 0.25s;
   /*
    * 默认配色：声优标签绿、类型标签橙；文字统一白色。
    * 底色这里必须也是半透明 —— 纯色会让标签完全没有透明/磨砂效果。
@@ -325,7 +328,7 @@ body {
   font-size: 15px;
   padding: 7px 16px;
   border-radius: 999px;
-  transition: all 0.15s;
+  transition: all var(--anim-duration);
   /* 窄屏时不允许换行/压缩，否则「媒体库」会竖排且背景溢出导航栏 */
   white-space: nowrap;
   flex-shrink: 0;
@@ -352,7 +355,7 @@ body {
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--anim-duration);
   outline: none;
   /* 不被 flex 压缩，避免圆形按钮被挤成椭圆 */
   flex-shrink: 0;
@@ -396,7 +399,7 @@ body {
   padding: 9px 12px;
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.12s;
+  transition: all var(--anim-duration);
 }
 .user-menu-item:hover {
   background: rgba(35, 39, 47, 0.65);
@@ -430,7 +433,7 @@ body {
   cursor: pointer;
   color: var(--text);
   border: 1px solid var(--border);
-  transition: all 0.15s;
+  transition: all var(--anim-duration);
   outline: none;
   flex-shrink: 0;
   white-space: nowrap;

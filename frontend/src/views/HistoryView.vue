@@ -119,7 +119,7 @@ function fmtTime(t: string): string {
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background var(--anim-duration);
 }
 .row:last-child {
   border-bottom: none;

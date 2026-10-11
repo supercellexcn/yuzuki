@@ -1,5 +1,6 @@
 <template>
-  <div class="file-list">
+  <!-- TransitionGroup：展开/收起目录时，进出的行做淡入淡出，其余行用 move 平滑补位 -->
+  <TransitionGroup name="fl" tag="div" class="file-list">
     <div
       v-for="f in visibleFiles"
       :key="f.id"
@@ -23,7 +24,7 @@
       <span v-if="f.is_dir !== 1" class="size">{{ formatSize(f.size) }}</span>
       <span v-if="f.is_dir !== 1 && actionLabel(f)" class="action">{{ actionLabel(f) }}</span>
     </div>
-  </div>
+  </TransitionGroup>
 </template>
 
 <script setup lang="ts">
@@ -107,14 +108,42 @@ function formatSize(n: number): string {
 
 <style scoped>
 .file-list {
-  display: flex;
-  flex-direction: column;
+  /*
+   * 这里刻意用块布局（默认）而不是 flex：
+   * 离开动画中的行是 position:absolute + 不设 top，靠「静态位置」停在原处。
+   * 块容器下静态位置才是它原本所在的位置；flex 容器会把绝对定位子元素的静态位置
+   * 算成容器内容区起点（顶部），导致所有离开的行堆到列表顶部淡出（已实测确认）。
+   */
   /* 主题底色 + 磨砂（模糊强度可在设置里改） */
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 14px;
   overflow: hidden;
   backdrop-filter: blur(var(--filelist-blur));
+  /* 离开动画中的行用 absolute 定位，需要这里做定位上下文 */
+  position: relative;
+}
+
+/*
+ * 展开 / 收起目录的动画（时长统一走全局「动画时长」设置，0 即关闭）：
+ * - 进出的行淡入淡出 + 轻微上下位移；
+ * - 离开中的行脱离布局流（absolute），其余行靠 fl-move 平滑补位（FLIP）。
+ */
+.file-item {
+  transition: opacity var(--anim-duration) ease, transform var(--anim-duration) ease;
+}
+.fl-enter-from,
+.fl-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+.fl-leave-active {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+.fl-move {
+  transition: transform var(--anim-duration) ease;
 }
 .file-item {
   display: flex;

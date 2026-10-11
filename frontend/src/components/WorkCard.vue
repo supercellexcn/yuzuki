@@ -103,7 +103,7 @@ function openFavPicker() {
   border-radius: 10px;
   overflow: hidden;
   cursor: pointer;
-  transition: transform 0.12s, border-color 0.12s;
+  transition: transform var(--anim-duration), border-color var(--anim-duration);
   display: flex;
   flex-direction: column;
   /*
@@ -183,7 +183,7 @@ function openFavPicker() {
   background: var(--tag-genre-bg);
   color: var(--tag-genre-fg);
   cursor: pointer;
-  transition: all 0.12s;
+  transition: all var(--anim-duration);
   backdrop-filter: blur(var(--control-blur));
 }
 .cover-tag:hover {
@@ -219,7 +219,7 @@ function openFavPicker() {
    */
   max-height: 600px;
   overflow: hidden;
-  transition: max-height 0.5s ease, opacity 0.5s ease, padding 0.5s ease;
+  transition: max-height var(--anim-duration) ease, opacity var(--anim-duration) ease, padding var(--anim-duration) ease;
 }
 .title {
   font-size: 15px;
@@ -263,7 +263,7 @@ function openFavPicker() {
   background: rgba(38, 43, 51, 0.7);
   color: #c3cbd7;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background var(--anim-duration);
   backdrop-filter: blur(var(--control-blur));
 }
 .chip:hover {

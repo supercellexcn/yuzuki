@@ -178,6 +178,20 @@
 
       <div class="setting-row">
         <div class="setting-label">
+          <div>动画时长</div>
+          <div class="hint">
+            全站动画 / 过渡的时长（0-1 秒），如文件列表展开收起、图片模式收放、
+            hover 反馈等。0 秒表示关闭动画。
+          </div>
+        </div>
+        <div class="anim-ctrl">
+          <el-slider v-model="animationDuration" :min="0" :max="1" :step="0.05" class="blur-slider" />
+          <span class="anim-value">{{ animationDuration.toFixed(2) }}s</span>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-label">
           <div>作品卡片大小</div>
           <div class="hint">影响媒体库、收藏与推荐卡片的宽度。</div>
         </div>
@@ -383,6 +397,8 @@ const cardSize = ref<CardSize>('medium')
 const cardWidth = ref(180)
 /** 声优 / 类型标签不透明度（1-100） */
 const tagOpacity = ref(62)
+/** 全局动画时长（秒，0-1）；0 表示关闭动画 */
+const animationDuration = ref(0.25)
 /** el-color-picker 点「清空」会给到 null，所以这里允许 null，保存时再收敛为 ''。 */
 const themeColors = reactive<Record<'theme_color_nav' | 'theme_color_actor' | 'theme_color_tag', string | null>>({
   theme_color_nav: '',
@@ -440,6 +456,7 @@ onMounted(async () => {
   themeColors.theme_color_actor = s.theme_color_actor
   themeColors.theme_color_tag = s.theme_color_tag
   tagOpacity.value = s.tag_opacity
+  animationDuration.value = s.animation_duration
   await refreshWallpapers() // 只探测，不换版本号，避免进入本页时壁纸重载闪屏
 })
 
@@ -474,6 +491,7 @@ async function save() {
       theme_color_actor: (themeColors.theme_color_actor || '').trim(),
       theme_color_tag: (themeColors.theme_color_tag || '').trim(),
       tag_opacity: tagOpacity.value,
+      animation_duration: animationDuration.value,
     })
     applyAppearance() // 立即生效，无需刷新页面
     ElMessage.success('已保存')
@@ -939,6 +957,21 @@ function resetThemeColors() {
   max-width: 100%;
   min-width: 0;
 }
+/* 动画时长：滑杆 + 右侧秒数读数 */
+.anim-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.anim-value {
+  color: var(--muted);
+  font-size: 13px;
+  min-width: 44px;
+  text-align: right;
+}
 .card-size-ctrl {
   display: flex;
   align-items: center;
@@ -965,7 +998,7 @@ function resetThemeColors() {
   cursor: pointer;
   border: 2px solid transparent;
   box-shadow: 0 0 0 1px var(--border);
-  transition: transform 0.12s;
+  transition: transform var(--anim-duration);
 }
 .swatch:hover {
   transform: scale(1.1);
@@ -999,7 +1032,8 @@ function resetThemeColors() {
     width: 100%;
   }
   .card-size-ctrl,
-  .color-ctrl {
+  .color-ctrl,
+  .anim-ctrl {
     justify-content: flex-start;
   }
 }

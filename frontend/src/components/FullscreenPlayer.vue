@@ -314,7 +314,7 @@ function fmt(t: number): string {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: transform 0.18s ease;
+  transition: transform var(--anim-duration) ease;
 }
 /* 自带壁纸层：做法与整站 body::before 一致，外扩一圈避免模糊后边缘露底 */
 .fs-bg {
@@ -516,7 +516,7 @@ function fmt(t: number): string {
   cursor: pointer;
   font-size: 14px;
   flex-shrink: 0;
-  transition: all 0.12s;
+  transition: all var(--anim-duration);
   display: inline-flex;
   align-items: center;
   justify-content: center;

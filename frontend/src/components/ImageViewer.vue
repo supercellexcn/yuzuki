@@ -114,7 +114,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   align-items: center;
   justify-content: center;
   padding-bottom: 4px;
-  transition: background 0.12s;
+  transition: background var(--anim-duration);
 }
 .nav:hover {
   background: var(--accent);

@@ -436,7 +436,7 @@ watch(
   border-radius: 999px;
   background: var(--accent-soft);
   cursor: pointer;
-  transition: border-color 0.18s, background 0.18s, filter 0.18s;
+  transition: border-color var(--anim-duration), background var(--anim-duration), filter var(--anim-duration);
 }
 .order-switch:hover {
   filter: brightness(1.15);
@@ -462,7 +462,7 @@ watch(
   font-weight: 700;
   line-height: 1;
   user-select: none;
-  transition: left 0.18s ease;
+  transition: left var(--anim-duration) ease;
 }
 .order-switch.desc .knob {
   left: calc(100% - 25px);

@@ -66,6 +66,7 @@ settingsRouter.put('/', (req, res) => {
       theme_color_actor: body.theme_color_actor as string | undefined,
       theme_color_tag: body.theme_color_tag as string | undefined,
       tag_opacity: body.tag_opacity as number | undefined,
+      animation_duration: body.animation_duration as number | undefined,
     })
     // 推荐开关从「关」切到「开」且还没有推荐结果时，立即后台计算一次
     if (!before.recommendation_enabled && next.recommendation_enabled) {

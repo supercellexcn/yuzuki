@@ -44,7 +44,7 @@ const emit = defineEmits<{ (e: 'pick', kind: ImageActionKind): void }>()
   color: var(--text);
   font-size: 14px;
   cursor: pointer;
-  transition: all 0.12s;
+  transition: all var(--anim-duration);
   backdrop-filter: blur(var(--control-blur));
   white-space: nowrap;
 }
