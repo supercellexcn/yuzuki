@@ -61,7 +61,16 @@ export const usePlayerStore = defineStore('player', {
         })
         a.addEventListener('play', () => {
           this.playing = true
+        })
+        /*
+         * 媒体会话只在音频「真正开始出声」时才声明。
+         * Android 的媒体通知会在音频结束/换源时失效且重建不可靠，所以换曲时我们先在
+         * ended 里主动释放旧会话，等这一刻（新曲真正开始播放）再声明一次 ——
+         * 让系统把它当成一次干净的新会话，而不是同一个会话原地续命。
+         */
+        a.addEventListener('playing', () => {
           this.setMediaPlaybackState('playing')
+          this.applyMediaMetadata()
         })
         a.addEventListener('pause', () => {
           this.playing = false
@@ -69,6 +78,7 @@ export const usePlayerStore = defineStore('player', {
         })
         a.addEventListener('ended', () => {
           this.playing = false
+          this.releaseMediaSession() // 先释放，稍后随新曲重建
           // 播完当前文件自动播放下一个（队列为空或已是最后一个则 next() 内部直接返回）
           this.next()
         })
@@ -93,7 +103,7 @@ export const usePlayerStore = defineStore('player', {
       // 保留已加载的作品信息，避免封面/标题一闪而空
       const keepWork = work || (this.current?.rj === rj ? this.current.work : null)
       this.current = { rj, file, work: keepWork, url }
-      this.updateMediaMetadata(rj, file, keepWork)
+      // 媒体卡片不在这里写：等 playing 事件（音频真正出声）时再声明，见 ensureAudio
       a.src = url
       // play() 返回 Promise：被拒绝（自动播放策略 / 加载被中断）时过去是静默失败，
       // 表现就是「播完一首后不切下一首、也不报错」。这里把原因打出来便于排查。
@@ -158,10 +168,7 @@ export const usePlayerStore = defineStore('player', {
       this.currentTime = 0
       this.duration = 0
       // 顺带收掉锁屏/通知栏的媒体卡片
-      if (mediaSessionSupported()) {
-        navigator.mediaSession.metadata = null
-        navigator.mediaSession.playbackState = 'none'
-      }
+      this.releaseMediaSession()
     },
     // ---- Media Session：锁屏 / 通知栏媒体卡片与耳机按键 ----
     /**
@@ -237,9 +244,14 @@ export const usePlayerStore = defineStore('player', {
         /* 进度条属于锦上添花，失败忽略 */
       }
     },
-    /** 更新锁屏/通知栏卡片上的标题、声优、社团与封面。 */
-    updateMediaMetadata(rj: string, file: MediaFile, work: Work | null) {
-      if (!mediaSessionSupported() || typeof MediaMetadata === 'undefined') return
+    /**
+     * 把「当前曲目」写进锁屏/通知栏媒体卡片。读取 this.current，可重复调用
+     * （同一首重复写没有副作用），所以既用于首次播放，也用于换曲后的重建。
+     */
+    applyMediaMetadata() {
+      const cur = this.current
+      if (!cur || !mediaSessionSupported() || typeof MediaMetadata === 'undefined') return
+      const { rj, file, work } = cur
       const cover = work?.cover_url ? authedUrl(work.cover_url) : ''
       if (!mediaSessionLogged) {
         mediaSessionLogged = true
@@ -258,6 +270,12 @@ export const usePlayerStore = defineStore('player', {
           ? [{ src: new URL(cover, window.location.origin).href, sizes: '512x512' }]
           : [],
       })
+    },
+    /** 释放媒体会话：清空卡片并把播放状态置为 none（通知随之收起）。换曲时先断开旧会话用。 */
+    releaseMediaSession() {
+      if (!mediaSessionSupported()) return
+      navigator.mediaSession.metadata = null
+      navigator.mediaSession.playbackState = 'none'
     },
     // ---- 全屏播放器 ----
     /** 打开全屏播放器（不自动播放）。files 为作品的可播放队列。 */
