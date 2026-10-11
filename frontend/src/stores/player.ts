@@ -95,7 +95,14 @@ export const usePlayerStore = defineStore('player', {
       this.current = { rj, file, work: keepWork, url }
       this.updateMediaMetadata(rj, file, keepWork)
       a.src = url
-      a.play()
+      // play() 返回 Promise：被拒绝（自动播放策略 / 加载被中断）时过去是静默失败，
+      // 表现就是「播完一首后不切下一首、也不报错」。这里把原因打出来便于排查。
+      a.play().catch((err: DOMException) => {
+        // 快速切歌时上一次 play() 会以 AbortError 结束，属正常情况
+        if (err?.name === 'AbortError') return
+        this.playing = false
+        console.warn('[player] 播放被拒绝：', err?.name, err?.message)
+      })
       this.record(rj, file.id)
     },
     /** 上一曲（在当前作品的播放队列内） */

@@ -75,12 +75,6 @@ function actionLabel(f: MediaFile): string {
   return ''
 }
 
-/** 文件的目录（rel_path 去掉文件名）。 */
-function dirOf(f: MediaFile): string {
-  const i = f.rel_path.lastIndexOf('/')
-  return i >= 0 ? f.rel_path.slice(0, i) : ''
-}
-
 function onClick(f: MediaFile) {
   if (f.is_dir === 1) {
     toggle(f.rel_path)
@@ -91,14 +85,12 @@ function onClick(f: MediaFile) {
     return
   }
   if (f.kind === 'audio' || f.kind === 'video') {
-    // 移动端：点音频直接打开全屏播放器，播放列表/上一曲/下一曲限定为当前文件同目录的可播放文件
-    if (isMobile.value) {
-      const dirQueue = playableQueue.value.filter((x) => dirOf(x) === dirOf(f))
-      player.openFullscreen(props.rj, props.work || null, dirQueue)
-      player.play(props.rj, f, props.work || null, dirQueue)
-    } else {
-      player.play(props.rj, f, props.work || null, playableQueue.value)
-    }
+    // 移动端：点音频直接打开全屏播放器。
+    // 播放队列用「整个作品」的可播放文件（与桌面端一致）：若只放当前目录的文件，
+    // 该目录只有一首时播完就没得切，会直接停下。全屏播放器的「播放列表」面板
+    // 仍只列同目录的文件 —— 它自己按目录过滤，与队列无关。
+    if (isMobile.value) player.openFullscreen(props.rj, props.work || null, playableQueue.value)
+    player.play(props.rj, f, props.work || null, playableQueue.value)
   }
 }
 
