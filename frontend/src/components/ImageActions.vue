@@ -64,21 +64,36 @@ const emit = defineEmits<{ (e: 'pick', kind: ImageActionKind): void }>()
   line-height: 1;
 }
 
-/* 作为弹层菜单使用：无边框行 + 悬停高亮，形态与筛选弹框一致 */
+/*
+ * 作为弹层菜单使用：整行铺满（配合把 popover 的 padding 归零）、行间画分隔线。
+ * 注意文字必须是深色 —— 弹层面板用的是 Element Plus 的浅色默认（白底），
+ * 之前沿用了深色主题的浅色文字，在白底上几乎看不见。
+ */
 .image-actions.menu {
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
   justify-content: stretch;
 }
 .image-actions.menu .act {
   width: 100%;
   justify-content: flex-start;
-  padding: 8px 10px;
+  padding: 11px 14px;
   border: none;
-  border-radius: 8px;
+  border-radius: 0;
   background: transparent;
   font-size: 14px;
-  color: var(--text);
+  color: #303133;
+}
+/* 分隔线画在行上沿，首行不加 */
+.image-actions.menu .act + .act {
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+/* 首尾行跟着面板的圆角裁一下，避免高亮时方角溢出 */
+.image-actions.menu .act:first-child {
+  border-radius: 12px 12px 0 0;
+}
+.image-actions.menu .act:last-child {
+  border-radius: 0 0 12px 12px;
 }
 .image-actions.menu .act:hover:not(:disabled) {
   background: var(--accent-soft);

@@ -163,13 +163,13 @@ function scrollToTop() {
   --control-blur: 1px;
   --card-min-width: 180px;
   /*
-   * 默认配色：声优标签绿、类型标签橙（浅底深字），与参考图一致。
-   * 这里必须也是半透明 —— 纯色会让标签完全没有透明/磨砂效果。
+   * 默认配色：声优标签绿、类型标签橙；文字统一白色。
+   * 底色这里必须也是半透明 —— 纯色会让标签完全没有透明/磨砂效果。
    */
   --tag-actor-bg: rgba(123, 200, 108, 0.62);
-  --tag-actor-fg: #1b1f26;
+  --tag-actor-fg: #ffffff;
   --tag-genre-bg: rgba(242, 166, 90, 0.62);
-  --tag-genre-fg: #1b1f26;
+  --tag-genre-fg: #ffffff;
   --card-meta-bg: transparent;
   /* 以下均由 useAppearance 按主题色算好（未设主题色时用这里的默认值） */
   --accent-fg: #0b0e12;

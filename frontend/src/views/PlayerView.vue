@@ -111,7 +111,8 @@
       :virtual-ref="actionVirtualRef"
       virtual-triggering
       placement="bottom-start"
-      :width="170"
+      :width="180"
+      popper-class="image-action-popper"
     >
       <ImageActions menu @pick="runImageAction" />
     </el-popover>
@@ -509,5 +510,16 @@ function onRecPointerDown(e: PointerEvent) {
   .cover {
     width: 160px;
   }
+}
+</style>
+
+<!--
+  长按图片的动作菜单：弹层被 teleport 到 body，作用域样式够不到外层面板，所以这段是全局的。
+  内边距归零 → 菜单行通到面板边缘（分隔线才是通栏的）；圆角放大到 12px。
+-->
+<style>
+.image-action-popper {
+  --el-popover-padding: 0;
+  --el-popover-border-radius: 12px;
 }
 </style>

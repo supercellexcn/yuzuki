@@ -31,6 +31,9 @@ const PANEL_TINT = 0.22
 const DEFAULT_ACTOR_COLOR = '#7bc86c'
 const DEFAULT_TAG_COLOR = '#f2a65a'
 
+/** 标签文字统一用白色（不再按底色亮度自动取深色）。 */
+const TAG_FG = '#ffffff'
+
 /** 各类颜色的不透明度：导航栏留一点透，标签透得更明显。 */
 const NAV_ALPHA = 0.75
 /** 标签不透明度在设置里的默认值（1-100），与样式表兜底值保持一致。 */
@@ -184,9 +187,9 @@ export function useAppearance() {
     const tagAlpha =
       Math.max(1, Math.min(100, Number(s.tag_opacity) || DEFAULT_TAG_OPACITY)) / 100
     setVar('--tag-actor-bg', rgba(actorColor, tagAlpha))
-    setVar('--tag-actor-fg', readableFg(actorColor))
+    setVar('--tag-actor-fg', TAG_FG)
     setVar('--tag-genre-bg', rgba(tagColor, tagAlpha))
-    setVar('--tag-genre-fg', readableFg(tagColor))
+    setVar('--tag-genre-fg', TAG_FG)
 
     // ---- 壁纸 ----
     const url =
