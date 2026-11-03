@@ -1,11 +1,11 @@
 <template>
-  <div v-if="player.current" class="bottom-player">
-    <div class="cover" title="回到播放源" @click="goSource">
+  <div v-if="player.current" class="bottom-player" @click="onBarClick">
+    <div class="cover" title="回到播放源">
       <img v-if="coverUrl" :src="coverUrl" alt="" />
       <div v-else class="no-cover">{{ player.current.rj }}</div>
     </div>
 
-    <div class="title" @click="goSource" :title="titleText">{{ titleText }}</div>
+    <div class="title" :title="titleText">{{ titleText }}</div>
 
     <div class="progress">
       <el-slider
@@ -28,9 +28,11 @@
         :title="player.loop ? '重复播放（开）' : '重复播放（关）'"
         @click="player.toggleLoop()"
       >
-        🔁
+        <PlaybackIcon name="repeat" />
       </button>
-      <button class="ctrl" title="上一曲" @click="player.prev()">⏮</button>
+      <button class="ctrl" title="上一曲" @click="player.prev()">
+        <PlaybackIcon name="prev" />
+      </button>
       <button class="ctrl" :title="`快退 ${seekSecs} 秒`" @click="player.seekBy(-seekSecs)">
         -{{ seekSecs }}
       </button>
@@ -38,12 +40,18 @@
       <button class="ctrl" :title="`快进 ${seekSecs} 秒`" @click="player.seekBy(seekSecs)">
         +{{ seekSecs }}
       </button>
-      <button class="ctrl" title="下一曲" @click="player.next()">⏭</button>
-      <button class="ctrl expand" title="全屏播放器" @click="player.openFullscreenFromCurrent()">⛶</button>
+      <button class="ctrl" title="下一曲" @click="player.next()">
+        <PlaybackIcon name="next" />
+      </button>
+      <button class="ctrl expand" title="全屏播放器" @click="player.openFullscreenFromCurrent()">
+        <PlaybackIcon name="expand" />
+      </button>
     </div>
 
     <div class="volume">
-      <span class="vol-icon">🔊</span>
+      <span class="vol-icon">
+        <PlaybackIcon :name="player.volume > 0 ? 'volume' : 'volume-off'" />
+      </span>
       <el-slider
         :model-value="player.volume * 100"
         :max="100"
@@ -52,7 +60,9 @@
       />
     </div>
 
-    <button class="btn stop" title="停止并关闭" @click="player.stop()">✕</button>
+    <button class="btn stop" title="停止并关闭" @click="player.stop()">
+      <PlaybackIcon name="close" />
+    </button>
     <!-- 移动端迷你条幅右侧的播放/暂停切换 -->
     <button class="btn mobile-toggle" :title="player.playing ? '暂停' : '播放'" @click="player.toggle()">
       <PlayPauseIcon :playing="player.playing" />
@@ -68,6 +78,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useIsMobile } from '../composables/useIsMobile'
 import { authedUrl } from '../api'
 import PlayPauseIcon from './PlayPauseIcon.vue'
+import PlaybackIcon from './PlaybackIcon.vue'
 
 const player = usePlayerStore()
 const settings = useSettingsStore()
@@ -87,7 +98,7 @@ function onSeek(v: number | number[]) {
   player.seek(Array.isArray(v) ? v[0] : v)
 }
 
-/** 点击封面/标题：移动端打开全屏播放器，桌面端跳到详情页（push 入历史栈，返回可自然回退） */
+/** 回到播放界面：移动端打开全屏播放器，桌面端跳到详情页（push 入历史栈，返回可自然回退） */
 function goSource() {
   if (!player.current) return
   if (isMobile.value) {
@@ -95,6 +106,17 @@ function goSource() {
   } else {
     router.push({ name: 'player', params: { rj: player.current.rj } })
   }
+}
+
+/**
+ * 点击播放条任意空白处都回到播放界面；
+ * 按钮（播放/暂停、上一首、下一首等）、进度条、音量区域除外。
+ */
+function onBarClick(e: MouseEvent) {
+  const target = e.target as Element | null
+  if (!target) return
+  if (target.closest('button, .el-slider, input, a, .volume')) return
+  goSource()
 }
 
 function fmt(t: number): string {
@@ -109,8 +131,10 @@ function fmt(t: number): string {
 .bottom-player {
   position: fixed;
   bottom: 0;
-  left: 0;
+  /* 侧边栏占据左侧；播放条让出这块空间（移动端抽屉不占位，--sidebar-w 为 0） */
+  left: var(--sidebar-w, 0px);
   right: 0;
+  transition: left var(--anim-duration);
   /* 与全站一致：半透明面板，主按钮/悬停框线跟随主题色（--accent） */
   background: var(--panel);
   border-top: 1px solid var(--border);
@@ -241,14 +265,20 @@ function fmt(t: number): string {
   gap: 6px;
 }
 .vol-icon {
-  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
 }
 
 /* 移动端迷你条幅：封面 | 标题 | 播放/暂停（进度/控件/音量/关闭全部收进全屏播放器） */
 .mobile-toggle {
   display: none;
 }
-@media (max-width: 760px) {
+/*
+ * 侧边栏占掉左侧后，较窄的桌面窗口已经放不下完整播放条，
+ * 与顶栏换行使用同一个 1000px 断点，提前切成迷你条幅。
+ */
+@media (max-width: 1000px) {
   .bottom-player {
     grid-template-areas: 'cover title toggle';
     grid-template-columns: auto minmax(0, 1fr) auto;

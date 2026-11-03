@@ -56,11 +56,15 @@
       <!-- 控件（靠下） -->
       <div class="fs-controls">
         <div class="fs-row">
-          <el-button size="small" @click="playlistVisible = true">☰ 播放列表</el-button>
+          <el-button size="small" @click="playlistVisible = true">
+            <PlaybackIcon name="list" /> 播放列表
+          </el-button>
           <el-button size="small" :type="isWorkFav ? 'danger' : 'default'" @click="onToggleFav">
             {{ isWorkFav ? '♥ 已收藏' : '♡ 收藏' }}
           </el-button>
-          <el-button size="small" @click="goDetail">⛶ 跳转详情</el-button>
+          <el-button size="small" @click="goDetail">
+            <PlaybackIcon name="external" /> 跳转详情
+          </el-button>
         </div>
 
         <div class="fs-progress">
@@ -89,19 +93,29 @@
             :title="player.loop ? '重复播放（开）' : '重复播放（关）'"
             @click="player.toggleLoop()"
           >
-            🔁
+            <PlaybackIcon name="repeat" />
           </button>
-          <button class="fbtn" title="上一曲" @click="player.prev()">⏮</button>
-          <button class="fbtn" :title="`快退 ${seekSecs} 秒`" @click="player.seekBy(-seekSecs)">-{{ seekSecs }}</button>
+          <button class="fbtn" title="上一曲" @click="player.prev()">
+            <PlaybackIcon name="prev" />
+          </button>
+          <button class="fbtn" :title="`快退 ${seekSecs} 秒`" @click="player.seekBy(-seekSecs)">
+            -{{ seekSecs }}
+          </button>
           <button class="fbtn main" :title="player.playing ? '暂停' : '播放'" @click="player.toggle()">
             <PlayPauseIcon :playing="player.playing" />
           </button>
-          <button class="fbtn" :title="`快进 ${seekSecs} 秒`" @click="player.seekBy(seekSecs)">+{{ seekSecs }}</button>
-          <button class="fbtn" title="下一曲" @click="player.next()">⏭</button>
+          <button class="fbtn" :title="`快进 ${seekSecs} 秒`" @click="player.seekBy(seekSecs)">
+            +{{ seekSecs }}
+          </button>
+          <button class="fbtn" title="下一曲" @click="player.next()">
+            <PlaybackIcon name="next" />
+          </button>
         </div>
 
         <div class="fs-volume">
-          <span class="vol-icon">🔊</span>
+          <span class="vol-icon">
+            <PlaybackIcon :name="player.volume > 0 ? 'volume' : 'volume-off'" />
+          </span>
           <el-slider :model-value="player.volume * 100" :max="100" @input="onVolume" />
         </div>
       </div>
@@ -110,7 +124,9 @@
       <div v-if="playlistVisible" class="pl-panel">
         <div class="pl-head">
           <span class="pl-title">播放列表</span>
-          <button class="pl-close" @click="playlistVisible = false">✕</button>
+          <button class="pl-close" @click="playlistVisible = false">
+            <PlaybackIcon name="close" />
+          </button>
         </div>
         <div class="pl-list">
           <div
@@ -140,6 +156,7 @@ import { useLibraryStore } from '../stores/library'
 import { useFavorite } from '../composables/useFavorite'
 import { authedUrl } from '../api'
 import PlayPauseIcon from './PlayPauseIcon.vue'
+import PlaybackIcon from './PlaybackIcon.vue'
 import type { MediaFile, FilterCondType } from '../api/types'
 
 const player = usePlayerStore()
@@ -381,7 +398,6 @@ function fmt(t: number): string {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  cursor: pointer;
   touch-action: none;
 }
 .fs-main {
@@ -543,9 +559,20 @@ function fmt(t: number): string {
 }
 .vol-icon {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
 }
 .fs-volume :deep(.el-slider) {
   flex: 1;
+}
+/* 顶部辅助按钮里的图标与文字对齐 */
+.fs-row :deep(.playback-icon) {
+  vertical-align: -3px;
+  margin-right: 4px;
+}
+.pl-close :deep(.playback-icon) {
+  vertical-align: middle;
 }
 /* 播放列表弹层 */
 .pl-panel {

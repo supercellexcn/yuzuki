@@ -1,7 +1,26 @@
 <template>
-  <el-popover v-model:visible="visible" trigger="click" placement="bottom-start" :width="380">
+  <el-popover
+    v-model:visible="visible"
+    trigger="click"
+    :placement="placement"
+    :width="popoverWidth"
+    popper-class="filter-popover"
+  >
     <template #reference>
-      <el-button :type="hasActive ? 'primary' : 'default'" plain size="default">
+      <!-- 顶栏旧样式（未使用）与侧边栏样式共用同一套弹层内容 -->
+      <button
+        v-if="variant === 'nav'"
+        type="button"
+        class="sidebar-item filter-nav"
+        :class="{ 'is-active': hasActive }"
+        :title="collapsed ? label : undefined"
+      >
+        <SidebarIcon v-if="icon" :name="icon" />
+        <span class="sidebar-label">{{ label }}</span>
+        <span v-if="hasActive" class="sidebar-badge">{{ activeValues.length }}</span>
+        <span class="sidebar-caret">▸</span>
+      </button>
+      <el-button v-else :type="hasActive ? 'primary' : 'default'" plain size="default">
         {{ label }}<span class="caret">▾</span>
       </el-button>
     </template>
@@ -27,27 +46,62 @@
       </div>
     </div>
   </el-popover>
+
+  <!--
+    弹层打开时铺一层透明遮罩：挡住底层页面的 hover / 点击。
+    点遮罩只会关闭弹层，不会顺带触发下面的卡片等操作。
+  -->
+  <Teleport to="body">
+    <div v-if="visible" class="filter-backdrop" @click="visible = false" />
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import type { FavoriteType } from '../api/types'
 import { CUSTOM_TAG } from '../api/types'
 import { useFavorite } from '../composables/useFavorite'
+import { useIsMobile } from '../composables/useIsMobile'
+import SidebarIcon from './SidebarIcon.vue'
 
-const props = defineProps<{
-  label: string
-  items: { name: string; count: number; category?: string }[]
-  activeValues: string[]
-  favType?: FavoriteType
-}>()
+const props = withDefaults(
+  defineProps<{
+    label: string
+    items: { name: string; count: number; category?: string }[]
+    activeValues: string[]
+    favType?: FavoriteType
+    /** nav = 侧边栏条目；button = 旧的筛选项按钮 */
+    variant?: 'nav' | 'button'
+    icon?: string
+    /** 侧边栏收起时只显示图标 */
+    collapsed?: boolean
+  }>(),
+  { variant: 'button', collapsed: false }
+)
 const emit = defineEmits<{ (e: 'select', name: string): void }>()
 
+const isMobile = useIsMobile()
+const route = useRoute()
 const visible = ref(false)
 const kw = ref('')
 const { fav } = useFavorite()
 
+// 在筛选弹层里选中条件后可能跳转到媒体库；页面变了就收起弹层
+watch(
+  () => route.name,
+  () => {
+    visible.value = false
+  }
+)
+
 const hasActive = computed(() => props.activeValues.length > 0)
+/*
+ * 侧边栏在左侧：弹层默认从右边弹出（左 → 右）。
+ * 移动端侧边栏是抽屉，宽度放不下右侧 380px 的弹层，改为向下弹出。
+ */
+const placement = computed(() => (isMobile.value ? 'bottom-start' : 'right-start'))
+const popoverWidth = computed(() => (isMobile.value ? 300 : 380))
 
 const filtered = computed(() => {
   const q = kw.value.trim().toLowerCase()
@@ -67,6 +121,16 @@ function onFav(it: { name: string; category?: string }) {
 </script>
 
 <style scoped>
+/*
+ * 透明遮罩：比 Element Plus 弹层（z-index 2000+）低一层，
+ * 但高于页面内容，用来截获弹层打开期间的鼠标事件。
+ */
+.filter-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1999;
+  background: transparent;
+}
 .caret {
   color: var(--muted);
   font-size: 10px;

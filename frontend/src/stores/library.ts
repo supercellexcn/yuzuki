@@ -103,8 +103,20 @@ export const useLibraryStore = defineStore('library', {
       this.savePrefsSoon()
       void this.fetch('replace')
     },
-    setQuery(q: string) {
+    /**
+     * 输入框实时内容：立即写进 q，让「搜索:」标签和输入框永远一致。
+     * 只更新界面状态、不发请求 —— 真正的请求由 setQuery（防抖/Enter/失焦）触发。
+     */
+    setQueryDraft(q: string) {
+      if (this.q === q) return
       this.q = q
+      this.page = 1
+      this.randomMode = false
+      this.savePrefsSoon()
+    },
+    setQuery(q: string) {
+      this.setQueryDraft(q)
+      // 同一个词也可能需要重新搜索（回车重试、清空标签后再次输入），所以这里总是发请求
       this.page = 1
       this.randomMode = false
       this.savePrefsSoon()

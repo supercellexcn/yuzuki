@@ -1,47 +1,109 @@
 <template>
-  <div class="app">
-    <header class="topbar">
-      <router-link to="/" class="brand">Yuzuki</router-link>
-      <nav class="nav">
-        <router-link to="/" class="nav-link">媒体库</router-link>
-      </nav>
-      <div class="spacer" />
-      <!-- 图片模式：隐藏作品卡片下半部分信息，只保留封面 / RJ 角标 / 标签 -->
-      <button
-        class="top-btn"
-        :class="{ active: imageOnly }"
-        :title="imageOnly ? '退出图片模式' : '图片模式（只显示图片）'"
-        @click="toggleImageOnly"
-      >
-        M
-      </button>
-      <button class="top-btn" title="回到顶部" @click="scrollToTop">T</button>
-      <div v-if="auth.user" ref="userWrapRef" class="user-wrap">
-        <span class="user-btn" @click="menuOpen = !menuOpen">
-          <span class="avatar">{{ (auth.user.username || 'U').slice(0, 1).toUpperCase() }}</span>
-          <span class="user-name">{{ auth.user.username }}</span>
-          <span class="caret">▾</span>
-        </span>
-        <!-- 自定义用户菜单：打开状态下点击/触摸外部任意元素或滚动屏幕即关闭 -->
-        <div v-if="menuOpen" class="user-menu">
-          <!-- 管理功能仅桌面端提供（移动端由路由守卫拦截 /admin） -->
-          <button v-if="!isMobile" class="user-menu-item admin" @click="onUserCommand('admin')">⚙ 管理功能</button>
-          <button class="user-menu-item" @click="onUserCommand('settings')">设置</button>
-          <button class="user-menu-item" @click="onUserCommand('change-password')">修改密码</button>
-          <div class="user-menu-divider" />
-          <button class="user-menu-item danger" @click="onUserCommand('logout')">退出登录</button>
-        </div>
-      </div>
-    </header>
+  <div
+    class="app"
+    :class="{
+      'sidebar-collapsed': sidebarCollapsed && !isMobile,
+      'mobile-sidebar-open': mobileSidebarOpen,
+      'has-player': !!player.current,
+    }"
+    :style="{ '--sidebar-w': sidebarWidth }"
+  >
+    <!-- 移动端侧边栏抽屉的遮罩 -->
+    <div
+      v-if="isMobile && mobileSidebarOpen"
+      class="sidebar-backdrop"
+      @click="mobileSidebarOpen = false"
+    />
 
-    <main class="content" :class="{ 'has-player': !!player.current }">
-      <router-view v-slot="{ Component, route }">
-        <keep-alive>
-          <component :is="Component" v-if="route.meta.keepAlive" :key="route.name" />
-        </keep-alive>
-        <component :is="Component" v-if="!route.meta.keepAlive" />
-      </router-view>
-    </main>
+    <AppSidebar
+      v-if="showChrome"
+      :collapsed="sidebarCollapsed && !isMobile"
+      @navigate="mobileSidebarOpen = false"
+    />
+
+    <div class="app-main">
+      <header class="topbar" :class="{ 'has-controls': isLibrary }">
+        <button
+          v-if="showChrome"
+          class="top-btn side-toggle"
+          :title="toggleTitle"
+          @click="toggleSidebar"
+        >
+          <SidebarIcon name="menu" />
+        </button>
+        <router-link v-if="!showChrome" to="/" class="topbar-logo" title="Yuzuki">
+          <img src="/favicon.jpg" alt="Yuzuki" />
+        </router-link>
+
+        <!-- 媒体库的搜索 / 排序控件搬到顶栏，合并成一条紧凑控件 -->
+        <div v-if="isLibrary" class="topbar-controls">
+          <SearchBar
+            :model-value="library.q"
+            size="default"
+            :placeholder="searchPlaceholder"
+            @update:model-value="library.setQueryDraft"
+            @search="library.setQuery"
+          />
+          <div class="sort-ctrl">
+            <div class="sort-tabs" role="radiogroup" aria-label="排序指标">
+              <button
+                v-for="o in SORT_OPTIONS"
+                :key="o.value"
+                type="button"
+                class="sort-tab"
+                :class="{ active: library.sort === o.value }"
+                role="radio"
+                :aria-checked="library.sort === o.value"
+                @click="library.setSort(o.value)"
+              >
+                {{ o.label }}
+              </button>
+            </div>
+            <!-- 升降序：一个文字按钮，点击在「升 / 降」之间切换 -->
+            <button
+              class="order-toggle"
+              type="button"
+              :title="library.order === 'desc' ? '当前降序，点击切换为升序' : '当前升序，点击切换为降序'"
+              @click="library.toggleOrder()"
+            >
+              {{ library.order === 'desc' ? '降' : '升' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="spacer" />
+        <!-- 随机推荐，与 M / T 一样作为顶栏圆形按钮 -->
+        <button
+          v-if="isLibrary"
+          class="top-btn"
+          :class="{ active: library.randomMode }"
+          :disabled="library.randomLoading"
+          :title="library.randomMode ? '换一批随机推荐' : '随机推荐'"
+          @click="library.toggleRandom()"
+        >
+          R
+        </button>
+        <!-- 图片模式：隐藏作品卡片下半部分信息，只保留封面 / RJ 角标 / 标签 -->
+        <button
+          class="top-btn"
+          :class="{ active: imageOnly }"
+          :title="imageOnly ? '退出图片模式' : '图片模式（只显示图片）'"
+          @click="toggleImageOnly"
+        >
+          M
+        </button>
+        <button class="top-btn" title="回到顶部" @click="scrollToTop">T</button>
+      </header>
+
+      <main class="content" :class="{ 'has-player': !!player.current }">
+        <router-view v-slot="{ Component, route }">
+          <keep-alive>
+            <component :is="Component" v-if="route.meta.keepAlive" :key="route.name" />
+          </keep-alive>
+          <component :is="Component" v-if="!route.meta.keepAlive" />
+        </router-view>
+      </main>
+    </div>
 
     <BottomPlayer />
     <FullscreenPlayer />
@@ -50,40 +112,95 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import { usePlayerStore } from './stores/player'
 import { useFavoritesStore } from './stores/favorites'
+import { useLibraryStore, SORT_OPTIONS } from './stores/library'
 import { useIsMobile } from './composables/useIsMobile'
 import { resetAdminPageSize } from './composables/useAdminPageSize'
 import { useViewMode } from './composables/useViewMode'
 import { useAppearance } from './composables/useAppearance'
+import AppSidebar from './components/AppSidebar.vue'
 import BottomPlayer from './components/BottomPlayer.vue'
 import FullscreenPlayer from './components/FullscreenPlayer.vue'
 import FavPicker from './components/FavPicker.vue'
+import SearchBar from './components/SearchBar.vue'
+import SidebarIcon from './components/SidebarIcon.vue'
 
-const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const player = usePlayerStore()
 const favorites = useFavoritesStore()
+const library = useLibraryStore()
 const isMobile = useIsMobile()
 const { imageOnly, toggleImageOnly } = useViewMode()
 // 启动时应用外观（壁纸 / 模糊 / 主题配色 / 卡片尺寸），并在设置或视口变化时自动重算
 useAppearance()
 
-// 用户菜单：打开状态下，点击/触摸外部任意元素或页面滚动即关闭（不依赖 element-plus 内部状态）
-const userWrapRef = ref<HTMLElement | null>(null)
-const menuOpen = ref(false)
-function onGlobalPointerDown(e: PointerEvent) {
-  if (!menuOpen.value) return
-  const wrap = userWrapRef.value
-  if (wrap && e.target instanceof Node && wrap.contains(e.target)) return
-  menuOpen.value = false
+const isLibrary = computed(() => route.name === 'library')
+// 登录 / 首次改密页不显示侧边栏（这些页面没有可操作的后台数据）
+const showChrome = computed(() => route.name !== 'login' && route.name !== 'change-password')
+
+// ---- 侧边栏：桌面端展开 / 收起，移动端作为左侧抽屉 ----
+const SIDEBAR_KEY = 'yuzuki_sidebar_collapsed'
+function readSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === '1'
+  } catch {
+    return false
+  }
 }
-function onGlobalScroll() {
-  if (menuOpen.value) menuOpen.value = false
+const sidebarCollapsed = ref(readSidebarCollapsed())
+const mobileSidebarOpen = ref(false)
+
+/** 侧边栏实际宽度：播放条用它让出左侧空间（移动端抽屉不占位）。 */
+const sidebarWidth = computed(() => {
+  if (!showChrome.value || isMobile.value) return '0px'
+  return sidebarCollapsed.value ? '64px' : '220px'
+})
+const toggleTitle = computed(() => {
+  if (isMobile.value) return mobileSidebarOpen.value ? '关闭侧边栏' : '打开侧边栏'
+  return sidebarCollapsed.value ? '展开侧边栏' : '收起侧边栏'
+})
+function toggleSidebar() {
+  if (isMobile.value) {
+    mobileSidebarOpen.value = !mobileSidebarOpen.value
+  } else {
+    sidebarCollapsed.value = !sidebarCollapsed.value
+  }
 }
+watch(sidebarCollapsed, (v) => {
+  try {
+    localStorage.setItem(SIDEBAR_KEY, v ? '1' : '0')
+  } catch {
+    /* 隐私模式下写入失败，忽略 */
+  }
+})
+watch(isMobile, (m) => {
+  if (!m) mobileSidebarOpen.value = false
+})
+watch(
+  () => route.name,
+  () => {
+    mobileSidebarOpen.value = false
+  }
+)
+// 抽屉打开时锁住底层页面滚动
+watch(mobileSidebarOpen, (v) => {
+  document.documentElement.classList.toggle('drawer-open', v && isMobile.value)
+})
+
+/** 作品数量放进搜索框占位符，顶栏不再单独占一行显示数量。 */
+const searchPlaceholder = computed(() => {
+  const count = library.randomMode
+    ? `随机推荐 ${library.randomItems.length} 个`
+    : `共 ${library.total} 个作品`
+  // 移动端搜索框很窄，去掉空格并缩小字号，保证数量能完整显示
+  if (isMobile.value) return count.replace(/\s/g, '')
+  return `${count} · 搜索标题 / RJ号 / 声优 / 标签…`
+})
 
 /**
  * 页面滚动时关闭所有 element-plus 弹层（排序下拉、筛选 popover 等）。
@@ -97,16 +214,12 @@ function closePoppersOnPageScroll() {
   document.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
 }
 onMounted(() => {
-  window.addEventListener('pointerdown', onGlobalPointerDown, true)
-  // 用户菜单：capture 阶段，任意滚动（含弹层内部）都收起
-  window.addEventListener('scroll', onGlobalScroll, { capture: true, passive: true })
-  // 其他 element-plus 弹层：页面滚动才关闭
+  // 页面滚动关闭 element-plus 弹层
   window.addEventListener('scroll', closePoppersOnPageScroll, { passive: true })
 })
 onUnmounted(() => {
-  window.removeEventListener('pointerdown', onGlobalPointerDown, true)
-  window.removeEventListener('scroll', onGlobalScroll, { capture: true })
   window.removeEventListener('scroll', closePoppersOnPageScroll)
+  document.documentElement.classList.remove('drawer-open')
 })
 
 // 登录就绪后加载收藏状态（供全站长按判定 isFav）；登出时清空，防止下个用户复用
@@ -122,20 +235,6 @@ watch(
   },
   { immediate: true }
 )
-
-function onUserCommand(cmd: string) {
-  menuOpen.value = false
-  if (cmd === 'admin') {
-    router.push({ name: 'admin' })
-  } else if (cmd === 'settings') {
-    router.push({ name: 'settings' })
-  } else if (cmd === 'change-password') {
-    router.push({ name: 'change-password' })
-  } else if (cmd === 'logout') {
-    auth.logout()
-    router.push({ name: 'login' })
-  }
-}
 
 function scrollToTop() {
   window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -224,6 +323,11 @@ html.fs-open,
 html.fs-open body {
   overflow: hidden;
 }
+/* 移动端侧边栏抽屉打开时同样锁住底层滚动 */
+html.drawer-open,
+html.drawer-open body {
+  overflow: hidden;
+}
 /*
  * 图片模式：收起作品卡片下半部分信息区（保留封面 / RJ 角标 / 标签）。
  * 用 max-height + opacity 过渡，切换时是 0.5s 的收放动画而不是直接消失。
@@ -243,30 +347,11 @@ html.image-only .work-card .meta {
  * 避免出现「蓝底蓝字」看不清；hover / 选中态用半透明叠加。
  */
 html.has-nav-color .topbar .brand,
-html.has-nav-color .topbar .nav-link,
-html.has-nav-color .topbar .user-name,
-html.has-nav-color .topbar .caret,
 html.has-nav-color .topbar .top-btn {
   color: var(--topbar-fg);
 }
-html.has-nav-color .topbar .nav-link:hover,
-html.has-nav-color .topbar .nav-link.router-link-active {
-  color: var(--topbar-fg);
-  background: var(--topbar-hover);
-}
 html.has-nav-color .topbar .top-btn:hover {
   border-color: var(--topbar-fg);
-  color: var(--topbar-fg);
-}
-html.has-nav-color .topbar .user-btn {
-  border-color: var(--topbar-line);
-}
-html.has-nav-color .topbar .user-btn:hover {
-  border-color: var(--topbar-fg);
-  background: var(--topbar-hover);
-}
-html.has-nav-color .topbar .avatar {
-  background: var(--topbar-chip);
   color: var(--topbar-fg);
 }
 body {
@@ -281,14 +366,27 @@ body {
 .app {
   min-height: 100vh;
   display: flex;
+}
+/* 顶栏 + 内容区：侧边栏占据左侧后，右侧自适应 */
+.app-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
+}
+/* 移动端侧边栏抽屉的遮罩 */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 240;
 }
 .topbar {
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 0 24px;
-  height: 60px;
+  gap: 12px;
+  padding: 0 20px;
+  min-height: 60px;
   /* 顶部导航栏颜色可设置；未设置时沿用面板色（接壁纸时半透明） */
   background: var(--topbar-color, var(--panel));
   border-bottom: 1px solid var(--border);
@@ -305,32 +403,115 @@ body {
   flex-shrink: 0;
   white-space: nowrap;
 }
-.nav {
-  display: flex;
-  gap: 6px;
-}
-.nav-link {
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 15px;
-  padding: 7px 16px;
-  border-radius: 999px;
-  transition: all var(--anim-duration);
-  /* 窄屏时不允许换行/压缩，否则「媒体库」会竖排且背景溢出导航栏 */
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.nav-link:hover {
-  color: var(--text);
-  background: rgba(35, 39, 47, 0.65);
-}
-.nav-link.router-link-active {
-  color: var(--accent);
-  background: var(--accent-soft);
-  font-weight: 600;
-}
 .spacer {
   flex: 1;
+}
+/* 顶栏左侧的侧边栏开关 */
+.side-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* 搜索栏 + 排序控件合并成一条紧凑控件（参考图：一整条，内部分段） */
+.topbar-controls {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 520px;
+  max-width: 640px;
+  min-width: 0;
+  height: 38px;
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.topbar .topbar-controls .searchbar {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: 100%;
+  display: flex;
+}
+.topbar-controls .el-input {
+  height: 100%;
+}
+.topbar-controls .el-input__wrapper {
+  height: 100%;
+  padding: 0 12px;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none !important;
+}
+.topbar-controls .el-input__inner {
+  height: 100%;
+}
+/* 搜索与排序之间的分界线：明显一些 */
+.sort-ctrl {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  border-left: 1px solid rgba(232, 235, 240, 0.5);
+}
+.sort-ctrl .sort-tabs {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+}
+.sort-tab {
+  height: 100%;
+  padding: 0 12px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background var(--anim-duration), color var(--anim-duration);
+}
+/* 入库 / 发售 / 销量之间的分隔线：浅一些 */
+.sort-tab + .sort-tab {
+  border-left: 1px solid rgba(232, 235, 240, 0.12);
+}
+.sort-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.sort-tab.active {
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+/* 升降序：文字按钮，点击在「升 / 降」之间切换 */
+.order-toggle {
+  flex-shrink: 0;
+  height: 100%;
+  padding: 0 14px;
+  border: none;
+  border-left: 1px solid rgba(232, 235, 240, 0.12);
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--anim-duration), color var(--anim-duration);
+}
+.order-toggle:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.topbar-logo {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.topbar-logo img {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  object-fit: contain;
+  background: #fff;
+  display: block;
 }
 .top-btn {
   width: 36px;
@@ -352,29 +533,94 @@ body {
   color: var(--accent);
   background: rgba(34, 38, 45, 0.65);
 }
-/* 图片模式开启态 */
+.top-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.top-btn:disabled:hover {
+  border-color: var(--border);
+  color: var(--text);
+  background: transparent;
+}
+/* 图片模式 / 随机模式开启态 */
 .top-btn.active {
   border-color: var(--accent);
   color: var(--accent-fg);
   background: var(--accent);
 }
-.user-wrap {
-  position: relative;
-  display: inline-flex;
-}
-.user-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 140px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 6px;
+/*
+ * 侧边栏条目：筛选菜单（FilterMenu）与普通导航链接共用。
+ * 收起时只渲染图标，因此这里不需要再隐藏标签。
+ */
+.sidebar-item {
   display: flex;
-  flex-direction: column;
-  z-index: 300;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  /* 收起时靠容器宽度从右往左裁掉文字，图标保持原位 */
+  overflow: hidden;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--anim-duration), color var(--anim-duration);
+}
+.sidebar-item:hover {
+  background: rgba(35, 39, 47, 0.65);
+  color: var(--accent);
+}
+.sidebar-item.is-active,
+.sidebar-item.router-link-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.sidebar-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.sidebar-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: opacity calc(var(--anim-duration) * 0.65) ease;
+}
+.sidebar.collapsed .sidebar-label,
+.sidebar.collapsed .sidebar-caret,
+.sidebar.collapsed .sidebar-badge {
+  opacity: 0;
+}
+.sidebar-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: opacity calc(var(--anim-duration) * 0.65) ease;
+}
+.sidebar-caret {
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: opacity calc(var(--anim-duration) * 0.65) ease;
 }
 .user-menu-item {
   background: transparent;
@@ -391,13 +637,6 @@ body {
   background: rgba(35, 39, 47, 0.65);
   color: var(--accent);
 }
-.user-menu-item.admin {
-  color: var(--accent);
-  font-weight: 600;
-}
-.user-menu-item.admin:hover {
-  background: var(--accent-soft);
-}
 .user-menu-item.danger {
   color: #e88;
 }
@@ -410,24 +649,6 @@ body {
   background: var(--border);
   margin: 4px 0;
 }
-.user-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  cursor: pointer;
-  color: var(--text);
-  border: 1px solid var(--border);
-  transition: all var(--anim-duration);
-  outline: none;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-.user-btn:hover {
-  border-color: var(--accent);
-  background: rgba(34, 38, 45, 0.65);
-}
 .avatar {
   width: 26px;
   height: 26px;
@@ -439,9 +660,7 @@ body {
   justify-content: center;
   font-size: 14px;
   font-weight: 700;
-}
-.user-name {
-  font-size: 14px;
+  flex-shrink: 0;
 }
 /* 自定义标签（category === 'custom'）：与 DLsite/hvdb 原生标签做颜色区分 */
 .tag-custom {
@@ -451,14 +670,9 @@ body {
 .tag-custom.el-tag {
   background: rgba(29, 58, 51, 0.78) !important;
 }
-.caret {
-  color: var(--muted);
-  font-size: 10px;
-}
 .content {
   flex: 1;
-  padding: 24px;
-  max-width: 1400px;
+  padding: 14px 20px 24px;
   width: 100%;
   margin: 0 auto;
 }
@@ -466,41 +680,69 @@ body {
 .content.has-player {
   padding-bottom: 150px;
 }
+/*
+ * 中等宽度（侧边栏仍展开）：一行放不下整条控件，
+ * 让控件整体换到第二行，避免把开关 / 圆形按钮挤变形。
+ */
+@media (max-width: 1000px) {
+  .topbar {
+    flex-wrap: wrap;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .topbar-controls {
+    order: 4;
+    flex: 1 1 100%;
+    max-width: none;
+  }
+}
 @media (max-width: 760px) {
   .content.has-player {
     padding-bottom: 170px;
   }
-  /* 窄屏：整体收紧，保证「媒体库」不换行、圆形按钮不变形、内容不溢出导航栏 */
+  /*
+   * 窄屏：压缩控件尺寸，让侧边栏开关 + 搜索/排序 + 右上角按钮
+   * 全部留在同一行，不再换行。
+   */
   .topbar {
-    gap: 8px;
-    padding: 0 10px;
-    height: 54px;
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 6px 8px;
+    min-height: 48px;
   }
-  .brand {
-    font-size: 16px;
-    letter-spacing: 0;
-  }
-  .nav-link {
-    font-size: 13px;
-    padding: 5px 10px;
-  }
-  .top-btn {
-    width: 30px;
-    height: 30px;
-    font-size: 13px;
-  }
-  .user-btn {
-    padding: 3px 7px;
-    gap: 5px;
-  }
-  /* 用户名在窄屏收起，只留头像，避免挤爆导航栏 */
-  .user-name {
+  .topbar.has-controls .spacer {
     display: none;
   }
-  .avatar {
-    width: 22px;
-    height: 22px;
+  .topbar-controls {
+    order: 0;
+    flex: 1 1 auto;
+    height: 34px;
+    border-radius: 9px;
+  }
+  .topbar-controls .el-input__wrapper {
+    padding: 0 8px;
+  }
+  .topbar-controls .el-input__inner {
     font-size: 12px;
+  }
+  .topbar-controls .el-input__prefix {
+    display: none;
+  }
+  .sort-tab {
+    padding: 0 6px;
+    font-size: 12px;
+  }
+  .order-toggle {
+    padding: 0 7px;
+    font-size: 12px;
+  }
+  .top-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 13px;
+  }
+  .app.mobile-sidebar-open .sidebar {
+    transform: translateX(0);
   }
 }
 </style>
