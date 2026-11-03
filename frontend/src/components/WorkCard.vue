@@ -176,6 +176,8 @@ function openFavPicker() {
   /* 火焰要压在卡片上边框外侧，所以不能整卡裁剪；圆角交给封面 / 信息区各自处理 */
   position: relative;
   overflow: visible;
+  /* overflow 变成 visible 后，flex 项默认会按内容最小宽度撑开；这里强制以固定宽度为准 */
+  min-width: 0;
   cursor: pointer;
   transition: transform var(--anim-duration), border-color var(--anim-duration);
   display: flex;
