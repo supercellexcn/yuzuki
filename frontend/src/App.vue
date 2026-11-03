@@ -72,27 +72,30 @@
         </div>
 
         <div class="spacer" />
-        <!-- 随机推荐，与 M / T 一样作为顶栏圆形按钮 -->
-        <button
-          v-if="isLibrary"
-          class="top-btn"
-          :class="{ active: library.randomMode }"
-          :disabled="library.randomLoading"
-          :title="library.randomMode ? '换一批随机推荐' : '随机推荐'"
-          @click="library.toggleRandom()"
-        >
-          R
-        </button>
-        <!-- 图片模式：隐藏作品卡片下半部分信息，只保留封面 / RJ 角标 / 标签 -->
-        <button
-          class="top-btn"
-          :class="{ active: imageOnly }"
-          :title="imageOnly ? '退出图片模式' : '图片模式（只显示图片）'"
-          @click="toggleImageOnly"
-        >
-          M
-        </button>
-        <button class="top-btn" title="回到顶部" @click="scrollToTop">T</button>
+        <!-- 桌面端保留 R / M / T；移动端改为可拖动的悬浮按钮组 -->
+        <div v-if="!isMobile" class="topbar-actions">
+          <!-- 随机推荐，与 M / T 一样作为顶栏圆形按钮 -->
+          <button
+            v-if="isLibrary"
+            class="top-btn"
+            :class="{ active: library.randomMode }"
+            :disabled="library.randomLoading"
+            :title="library.randomMode ? '换一批随机推荐' : '随机推荐'"
+            @click="library.toggleRandom()"
+          >
+            R
+          </button>
+          <!-- 图片模式：隐藏作品卡片下半部分信息，只保留封面 / RJ 角标 / 标签 -->
+          <button
+            class="top-btn"
+            :class="{ active: imageOnly }"
+            :title="imageOnly ? '退出图片模式' : '图片模式（只显示图片）'"
+            @click="toggleImageOnly"
+          >
+            M
+          </button>
+          <button class="top-btn" title="回到顶部" @click="scrollToTop">T</button>
+        </div>
       </header>
 
       <main class="content" :class="{ 'has-player': !!player.current }">
@@ -108,6 +111,7 @@
     <BottomPlayer />
     <FullscreenPlayer />
     <FavPicker />
+    <MobileDock v-if="isMobile && showChrome" />
   </div>
 </template>
 
@@ -128,6 +132,7 @@ import FullscreenPlayer from './components/FullscreenPlayer.vue'
 import FavPicker from './components/FavPicker.vue'
 import SearchBar from './components/SearchBar.vue'
 import SidebarIcon from './components/SidebarIcon.vue'
+import MobileDock from './components/MobileDock.vue'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -405,6 +410,12 @@ body {
 }
 .spacer {
   flex: 1;
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
 }
 /* 顶栏左侧的侧边栏开关 */
 .side-toggle {

@@ -64,6 +64,9 @@
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
       <circle cx="12" cy="7" r="4" />
     </template>
+    <template v-else-if="name === 'home'">
+      <path d="m3 9.5 9-6.5 9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1Z" />
+    </template>
     <template v-else-if="name === 'menu'">
       <path d="M3 6h18" />
       <path d="M3 12h18" />

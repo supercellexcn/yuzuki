@@ -47,6 +47,9 @@ export interface AppSettings {
   // 同系列允许绕过 MIN_SIMILARITY（独立强关联通道）
   recommendation_series_bypass_min_score: boolean
   // ---- 外观 / 壁纸 / 主题配色（全局共享，所有用户一致）----
+  // 桌面端 / 移动端壁纸是否启用。文件可以保留，但停用后不应用到页面。
+  wallpaper_desktop_enabled: boolean
+  wallpaper_mobile_enabled: boolean
   // 壁纸本身的模糊强度（0-100，映射为 filter 的 px）。
   // 其余表面（面板 / 文件列表 / 控件）刻意不做磨砂：壁纸已经整层模糊过，
   // 再叠一层模糊几乎看不出差别，却要为每个元素付一个合成层的代价（长列表里是几万个）。
@@ -103,6 +106,8 @@ const DEFAULTS: AppSettings = {
   recommendation_series_priority_enabled: true,
   recommendation_series_max_count: 3,
   recommendation_series_bypass_min_score: true,
+  wallpaper_desktop_enabled: true,
+  wallpaper_mobile_enabled: true,
   wallpaper_blur: 20,
   panel_opacity: 62,
   filelist_opacity: 62,
@@ -193,6 +198,8 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
   next.recommendation_series_priority_enabled = Boolean(patch.recommendation_series_priority_enabled ?? cur.recommendation_series_priority_enabled)
   next.recommendation_series_max_count = Math.max(1, Math.min(20, Number(patch.recommendation_series_max_count ?? cur.recommendation_series_max_count) || DEFAULTS.recommendation_series_max_count))
   next.recommendation_series_bypass_min_score = Boolean(patch.recommendation_series_bypass_min_score ?? cur.recommendation_series_bypass_min_score)
+  next.wallpaper_desktop_enabled = Boolean(patch.wallpaper_desktop_enabled ?? cur.wallpaper_desktop_enabled)
+  next.wallpaper_mobile_enabled = Boolean(patch.wallpaper_mobile_enabled ?? cur.wallpaper_mobile_enabled)
   next.wallpaper_blur = clampPercent(patch.wallpaper_blur ?? cur.wallpaper_blur, DEFAULTS.wallpaper_blur)
   next.panel_opacity = clampPercent(patch.panel_opacity ?? cur.panel_opacity, DEFAULTS.panel_opacity)
   next.filelist_opacity = clampPercent(patch.filelist_opacity ?? cur.filelist_opacity, DEFAULTS.filelist_opacity)

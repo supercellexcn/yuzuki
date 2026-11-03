@@ -110,6 +110,9 @@ export interface AppSettings {
   recommendation_series_max_count: number
   recommendation_series_bypass_min_score: boolean
   // ---- 外观 / 壁纸 / 主题配色（全局共享）----
+  /** 桌面端 / 移动端壁纸是否启用；停用后文件保留但不应用。 */
+  wallpaper_desktop_enabled: boolean
+  wallpaper_mobile_enabled: boolean
   /** 壁纸本身的模糊强度（0-100）。全站只有壁纸做模糊，其余表面只调不透明度。 */
   wallpaper_blur: number
   /** 面板（顶部栏 / 详情页信息区 / 播放器 / 设置卡片）底色不透明度（0-100）。有壁纸时才生效 */

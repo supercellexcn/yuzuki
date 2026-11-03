@@ -56,6 +56,8 @@ settingsRouter.put('/', (req, res) => {
       recommendation_series_priority_enabled: body.recommendation_series_priority_enabled as boolean | undefined,
       recommendation_series_max_count: body.recommendation_series_max_count as number | undefined,
       recommendation_series_bypass_min_score: body.recommendation_series_bypass_min_score as boolean | undefined,
+      wallpaper_desktop_enabled: body.wallpaper_desktop_enabled as boolean | undefined,
+      wallpaper_mobile_enabled: body.wallpaper_mobile_enabled as boolean | undefined,
       wallpaper_blur: body.wallpaper_blur as number | undefined,
       panel_opacity: body.panel_opacity as number | undefined,
       filelist_opacity: body.filelist_opacity as number | undefined,

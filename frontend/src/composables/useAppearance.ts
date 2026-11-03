@@ -152,6 +152,14 @@ export function useAppearance() {
   const hasCurrentWallpaper = computed(() =>
     currentKind.value === 'mobile' ? hasWallpaperMobile.value : hasWallpaperDesktop.value
   )
+  /** 当前端壁纸是否启用（文件存在但被停用时，不应用到页面）。 */
+  const currentWallpaperEnabled = computed(() => {
+    const s = settings.settings
+    if (!s) return false
+    return currentKind.value === 'mobile'
+      ? s.wallpaper_mobile_enabled !== false
+      : s.wallpaper_desktop_enabled !== false
+  })
 
   /** 把当前设置应用为 CSS 变量。settings 未加载时为空操作。 */
   function apply(): void {
@@ -162,7 +170,7 @@ export function useAppearance() {
     // ---- 壁纸 ----
     // 先算出壁纸 URL：下面「底色透明度」是否生效取决于有没有壁纸。
     const wallUrl =
-      hasCurrentWallpaper.value && getToken()
+      hasCurrentWallpaper.value && currentWallpaperEnabled.value && getToken()
         ? wallpaperUrl(currentKind.value, wallpaperVersion.value || undefined)
         : ''
     root.style.setProperty('--wallpaper-image', wallUrl ? `url("${wallUrl}")` : 'none')

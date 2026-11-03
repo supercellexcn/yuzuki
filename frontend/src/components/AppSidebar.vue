@@ -1,8 +1,9 @@
 <template>
   <aside class="sidebar" :class="{ collapsed }">
-    <!-- 网站图标：点击回媒体库首页 -->
+    <!-- 网站图标 + 站名：点击回媒体库首页 -->
     <router-link to="/" class="sidebar-brand" title="返回首页" @click="onNavigate">
       <img src="/favicon.jpg" alt="Yuzuki" />
+      <span class="sidebar-brand-name">Yuzuki</span>
     </router-link>
 
     <div class="sidebar-scroll">
@@ -59,16 +60,6 @@
       </router-link>
       <!-- 管理功能仅桌面端提供（移动端由路由守卫拦截 /admin） -->
       <router-link
-        v-if="!isMobile"
-        to="/admin"
-        class="sidebar-item"
-        :title="collapsed ? '管理功能' : undefined"
-        @click="onNavigate"
-      >
-        <SidebarIcon name="admin" />
-        <span class="sidebar-label">管理功能</span>
-      </router-link>
-      <router-link
         to="/history"
         class="sidebar-item"
         :title="collapsed ? '最近播放' : undefined"
@@ -99,6 +90,18 @@
           <button class="user-menu-item danger" @click="onCommand('logout')">退出登录</button>
         </div>
       </div>
+
+      <!-- 管理功能仅桌面端提供（移动端由路由守卫拦截 /admin） -->
+      <router-link
+        v-if="!isMobile"
+        to="/admin"
+        class="sidebar-item"
+        :title="collapsed ? '管理功能' : undefined"
+        @click="onNavigate"
+      >
+        <SidebarIcon name="admin" />
+        <span class="sidebar-label">管理功能</span>
+      </router-link>
 
       <router-link
         to="/settings"
@@ -232,7 +235,9 @@ function onCommand(cmd: string) {
   flex-shrink: 0;
   display: flex;
   align-items: center;
+  gap: 10px;
   padding: 12px 15px 6px;
+  overflow: hidden;
 }
 .sidebar-brand img {
   width: 34px;
@@ -241,6 +246,18 @@ function onCommand(cmd: string) {
   object-fit: contain;
   background: #fff;
   display: block;
+  flex-shrink: 0;
+}
+.sidebar-brand-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  transition: opacity calc(var(--anim-duration) * 0.65) ease;
+}
+.sidebar.collapsed .sidebar-brand-name {
+  opacity: 0;
 }
 .sidebar-scroll {
   flex: 1;

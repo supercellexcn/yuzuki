@@ -2,8 +2,11 @@
   <div class="settings">
     <h2>应用设置</h2>
 
-    <div class="card">
-      <div class="card-title">ASMR 源路径</div>
+    <div class="card big-card">
+      <div class="card-title big-title">系统设置</div>
+      <div class="big-card-body">
+        <div class="card sub-card">
+          <div class="card-title">ASMR 源路径</div>
       <div class="paths">
         <div v-for="(p, i) in paths" :key="i" class="path-row">
           <el-input v-model="paths[i]" placeholder="/path/to/asmr" />
@@ -14,51 +17,51 @@
       <div class="hint">支持配置多个源路径；路径须在 Docker 中以只读卷挂载到容器内同一位置。</div>
     </div>
 
-    <div class="card">
-      <div class="card-title">扫描层级深度</div>
+        <div class="card sub-card">
+          <div class="card-title">扫描层级深度</div>
       <el-input-number v-model="scanDepth" :min="0" :max="20" />
       <div class="hint">0 表示只扫描源路径直接子目录；每 +1 多下钻一层。</div>
     </div>
 
-    <div class="card">
-      <div class="card-title">扫描并发数</div>
+        <div class="card sub-card">
+          <div class="card-title">扫描并发数</div>
       <el-input-number v-model="scanConcurrency" :min="1" :max="20" />
       <div class="hint">同时并发抓取 DLsite 的作品数量，默认 5。数值越大越快，但更可能被 DLsite 限流。</div>
     </div>
 
-    <div class="card">
-      <div class="card-title">每页加载数量</div>
+        <div class="card sub-card">
+          <div class="card-title">每页加载数量</div>
       <el-input-number v-model="pageSize" :min="1" :max="200" />
       <div class="hint">媒体库一次加载的作品数量，默认 20；向下滚动自动加载同样数量。</div>
     </div>
 
-    <div class="card">
-      <div class="card-title">播放快进 / 快退秒数</div>
+        <div class="card sub-card">
+          <div class="card-title">播放快进 / 快退秒数</div>
       <el-input-number v-model="seekSeconds" :min="1" :max="300" />
       <div class="hint">底部播放条「快进 / 快退」按钮一次跳转的秒数，默认 15 秒。</div>
     </div>
 
-    <div class="card">
-      <div class="card-title">代理服务器（用于 DLsite 抓取）</div>
+        <div class="card sub-card">
+          <div class="card-title">代理服务器（用于 DLsite 抓取）</div>
       <el-input v-model="proxy" placeholder="http://host:port 或 socks5://host:port（留空则不使用代理）" />
       <div class="hint">仅作用于 DLsite 元数据抓取请求，不影响本地文件访问。</div>
     </div>
 
-    <div class="card">
-      <div class="card-title">DLsite 抓取</div>
+        <div class="card sub-card">
+          <div class="card-title">DLsite 抓取</div>
       <div class="hint">一般无需修改，除非页面结构变化需要调整 URL 模板。</div>
       <el-input v-model="dlsite_base" placeholder="https://www.dlsite.com" style="margin-bottom: 8px" />
       <el-input v-model="dlsite_path" placeholder="/maniax/work/=/product_id/{rj}.html" />
     </div>
 
-    <div class="card">
-      <div class="card-title">封面存储目录</div>
+        <div class="card sub-card">
+          <div class="card-title">封面存储目录</div>
       <el-input v-model="coverDir" placeholder="留空则使用默认目录（backend/data/covers）" />
       <div class="hint">下载的封面缓存存放路径，可填绝对路径。修改后新抓取的封面会保存到新位置，已存在的封面仍在原处。</div>
     </div>
 
-    <div class="card">
-      <div class="card-title">默认封面（无封面作品兜底）</div>
+        <div class="card sub-card">
+          <div class="card-title">默认封面（无封面作品兜底）</div>
       <div class="hint">上传一张图片（jpg / png，≤50MB）。没有封面的作品会用此图作为封面。</div>
       <div v-if="hasDefaultCover" class="def-cover">
         <img :src="defaultCoverUrl()" alt="默认封面" />
@@ -74,6 +77,8 @@
         style="display: none"
         @change="onCoverFileChange"
       />
+    </div>
+      </div>
     </div>
 
     <div class="card">
@@ -123,11 +128,20 @@
 
       <div v-for="wp in WALLPAPERS" :key="wp.kind" class="wallpaper-row">
         <div class="wallpaper-label">{{ wp.label }}</div>
-        <div class="wallpaper-preview">
+        <div class="wallpaper-preview" :class="{ off: hasWallpaperOf(wp.kind) && !wallpaperEnabled[wp.kind] }">
           <img v-if="hasWallpaperOf(wp.kind)" :src="wallpaperPreview(wp.kind)" :alt="wp.label" />
           <span v-else class="wallpaper-empty">未设置</span>
         </div>
         <div class="wallpaper-actions">
+          <el-button
+            v-if="hasWallpaperOf(wp.kind)"
+            size="small"
+            :type="wallpaperEnabled[wp.kind] ? 'primary' : 'default'"
+            plain
+            :title="wallpaperEnabled[wp.kind] ? '点击停用' : '点击启用'"
+            @click="toggleWallpaper(wp.kind)"
+            >{{ wallpaperEnabled[wp.kind] ? '启用中' : '停用中' }}</el-button
+          >
           <el-button size="small" type="primary" @click="pickWallpaper(wp.kind)">上传</el-button>
           <el-button
             v-if="hasWallpaperOf(wp.kind)"
@@ -268,7 +282,7 @@
     </div>
 
     <div class="actions">
-      <el-button type="primary" :loading="saving" @click="save">保存设置</el-button>
+      <el-button type="primary" :loading="saving" @click="save()">保存设置</el-button>
       <el-button type="success" :loading="scanning" @click="doScan">立即扫描</el-button>
       <el-button v-if="scanJob?.status === 'running' && !scanJob.paused" @click="doPause">暂停</el-button>
       <el-button v-if="scanJob?.status === 'running' && scanJob.paused" type="warning" @click="doResume">继续</el-button>
@@ -333,14 +347,30 @@
         <div v-for="(e, i) in coverJob.errors.slice(0, 20)" :key="i" class="err">⚠ {{ e }}</div>
       </div>
     </div>
+
+    <!-- 自动保存倒计时：点击 × 取消本次修改并还原到上次保存的状态 -->
+    <Transition name="save-toast">
+      <div
+        v-if="autoSavePending"
+        class="save-toast"
+        :style="{ bottom: player.current ? '112px' : '24px' }"
+        role="status"
+      >
+        <span>设置将在 {{ autoSaveSeconds }} 秒后保存生效</span>
+        <button type="button" class="save-toast-close" title="取消本次修改" @click="cancelAutoSave">
+          ×
+        </button>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useSettingsStore } from '../stores/settings'
 import { useLibraryStore } from '../stores/library'
+import { usePlayerStore } from '../stores/player'
 import { useAppearance } from '../composables/useAppearance'
 import {
   startScan,
@@ -360,10 +390,11 @@ import {
   removeWallpaper,
   wallpaperUrl,
 } from '../api'
-import type { ScanJob, CoverJob, RecommendationJob, CardSize, WallpaperKind } from '../api/types'
+import type { ScanJob, CoverJob, RecommendationJob, CardSize, WallpaperKind, AppSettings } from '../api/types'
 
 const store = useSettingsStore()
 const library = useLibraryStore()
+const player = usePlayerStore()
 const paths = ref<string[]>([])
 const scanDepth = ref(2)
 const scanConcurrency = ref(5)
@@ -377,6 +408,11 @@ const hasDefaultCover = ref(false)
 const coverFileInput = ref<HTMLInputElement | null>(null)
 
 const saving = ref(false)
+const autoSavePending = ref(false)
+const autoSaveSeconds = ref(3)
+let autoSaveCountdown: number | undefined
+/** 初始化 / 取消修改回填表单时，避免被 watch 当成用户修改 */
+let suppressAutoSave = true
 const scanning = ref(false)
 const scanJob = ref<ScanJob | null>(null)
 const coverRunning = ref(false)
@@ -426,6 +462,11 @@ const WALLPAPERS: Array<{ kind: WallpaperKind; label: string }> = [
   { kind: 'desktop', label: '桌面端壁纸' },
   { kind: 'mobile', label: '移动端壁纸' },
 ]
+/** 桌面端 / 移动端壁纸是否启用（文件保留，停用后不应用） */
+const wallpaperEnabled = reactive<Record<WallpaperKind, boolean>>({
+  desktop: true,
+  mobile: true,
+})
 /** 预设配色（偏二次元的高饱和色） */
 const PRESET_COLORS = ['#4FA8F5', '#A78BFA', '#7BC86C', '#F78FB3', '#F2A65A']
 const COLOR_ITEMS: Array<{ key: keyof typeof themeColors; label: string; hint: string }> = [
@@ -438,8 +479,40 @@ const COLOR_ITEMS: Array<{ key: keyof typeof themeColors; label: string; hint: s
   { key: 'theme_color_tag', label: '类型标签颜色', hint: '卡片封面标签与详情页类型标签底色。' },
 ]
 
-onMounted(async () => {
-  const s = await store.load()
+/** 当前表单 -> 保存请求体。 */
+function currentPayload(): Partial<AppSettings> {
+  return {
+    source_paths: paths.value.map((p) => p.trim()).filter(Boolean),
+    scan_depth: scanDepth.value,
+    scan_concurrency: scanConcurrency.value,
+    page_size: pageSize.value,
+    seek_seconds: seekSeconds.value,
+    proxy: proxy.value.trim(),
+    dlsite_base: dlsite_base.value.trim(),
+    dlsite_path: dlsite_path.value.trim(),
+    cover_dir: coverDir.value.trim(),
+    recommendation_enabled: recEnabled.value,
+    recommendation_auto_calc: recAutoCalc.value,
+    wallpaper_desktop_enabled: wallpaperEnabled.desktop,
+    wallpaper_mobile_enabled: wallpaperEnabled.mobile,
+    wallpaper_blur: wallpaperBlur.value,
+    panel_opacity: panelOpacity.value,
+    filelist_opacity: filelistOpacity.value,
+    control_opacity: controlOpacity.value,
+    card_size: cardSize.value,
+    card_width: cardWidth.value,
+    theme_color_nav: (themeColors.theme_color_nav || '').trim(),
+    theme_color_actor: (themeColors.theme_color_actor || '').trim(),
+    theme_color_tag: (themeColors.theme_color_tag || '').trim(),
+    actor_tag_opacity: actorTagOpacity.value,
+    genre_tag_opacity: genreTagOpacity.value,
+    animation_duration: animationDuration.value,
+  }
+}
+
+/** 把服务端设置填回表单（初始化与取消修改共用）。 */
+function applySettingsToForm(s: AppSettings | null) {
+  if (!s) return
   paths.value = s.source_paths.length ? [...s.source_paths] : ['']
   scanDepth.value = s.scan_depth
   scanConcurrency.value = s.scan_concurrency
@@ -449,15 +522,10 @@ onMounted(async () => {
   dlsite_base.value = s.dlsite_base
   dlsite_path.value = s.dlsite_path
   coverDir.value = s.cover_dir
-  hasDefaultCover.value = await checkDefaultCover().catch(() => false)
-  scanJob.value = await getScanStatus()
-  if (scanJob.value.status === 'running') startPolling()
-  coverJob.value = await getCoverStatus()
-  if (coverJob.value.status === 'running') startCoverPolling()
   recEnabled.value = s.recommendation_enabled
   recAutoCalc.value = s.recommendation_auto_calc
-  recJob.value = await getRecommendationStatus()
-  if (recJob.value.status === 'running') startRecPolling()
+  wallpaperEnabled.desktop = s.wallpaper_desktop_enabled !== false
+  wallpaperEnabled.mobile = s.wallpaper_mobile_enabled !== false
   wallpaperBlur.value = s.wallpaper_blur
   panelOpacity.value = s.panel_opacity
   filelistOpacity.value = s.filelist_opacity
@@ -470,45 +538,104 @@ onMounted(async () => {
   actorTagOpacity.value = s.actor_tag_opacity
   genreTagOpacity.value = s.genre_tag_opacity
   animationDuration.value = s.animation_duration
+}
+
+const formState = computed(() => [
+  [...paths.value],
+  scanDepth.value,
+  scanConcurrency.value,
+  pageSize.value,
+  seekSeconds.value,
+  proxy.value,
+  dlsite_base.value,
+  dlsite_path.value,
+  coverDir.value,
+  recEnabled.value,
+  recAutoCalc.value,
+  wallpaperEnabled.desktop,
+  wallpaperEnabled.mobile,
+  wallpaperBlur.value,
+  panelOpacity.value,
+  filelistOpacity.value,
+  controlOpacity.value,
+  cardSize.value,
+  cardWidth.value,
+  themeColors.theme_color_nav,
+  themeColors.theme_color_actor,
+  themeColors.theme_color_tag,
+  actorTagOpacity.value,
+  genreTagOpacity.value,
+  animationDuration.value,
+])
+
+function clearAutoSaveTimers() {
+  if (autoSaveCountdown !== undefined) {
+    clearInterval(autoSaveCountdown)
+    autoSaveCountdown = undefined
+  }
+}
+
+/** 表单变化后 3 秒保存；期间显示倒计时，可点 × 取消。 */
+function scheduleAutoSave() {
+  if (suppressAutoSave) return
+  clearAutoSaveTimers()
+  autoSaveSeconds.value = 3
+  autoSavePending.value = true
+  autoSaveCountdown = window.setInterval(() => {
+    autoSaveSeconds.value -= 1
+    if (autoSaveSeconds.value <= 0) {
+      clearAutoSaveTimers()
+      void save(false)
+    }
+  }, 1000)
+}
+watch(formState, () => scheduleAutoSave())
+
+/** 取消本次未保存的修改，回填上一次保存成功的设置。 */
+async function cancelAutoSave() {
+  clearAutoSaveTimers()
+  autoSavePending.value = false
+  suppressAutoSave = true
+  applySettingsToForm(store.settings)
+  await nextTick()
+  suppressAutoSave = false
+  ElMessage.info('已取消本次修改')
+}
+
+function toggleWallpaper(kind: WallpaperKind) {
+  wallpaperEnabled[kind] = !wallpaperEnabled[kind]
+}
+
+onMounted(async () => {
+  const s = await store.load()
+  applySettingsToForm(s)
+  hasDefaultCover.value = await checkDefaultCover().catch(() => false)
+  scanJob.value = await getScanStatus()
+  if (scanJob.value.status === 'running') startPolling()
+  coverJob.value = await getCoverStatus()
+  if (coverJob.value.status === 'running') startCoverPolling()
+  recJob.value = await getRecommendationStatus()
+  if (recJob.value.status === 'running') startRecPolling()
   await refreshWallpapers() // 只探测，不换版本号，避免进入本页时壁纸重载闪屏
+  await nextTick()
+  suppressAutoSave = false
 })
 
 onUnmounted(() => {
+  clearAutoSaveTimers()
   stopPolling()
   stopCoverPolling()
   stopRecPolling()
 })
 
-async function save() {
+async function save(showMessage = true) {
+  clearAutoSaveTimers()
+  autoSavePending.value = false
   saving.value = true
   try {
-    await store.save({
-      source_paths: paths.value.map((p) => p.trim()).filter(Boolean),
-      scan_depth: scanDepth.value,
-      scan_concurrency: scanConcurrency.value,
-      page_size: pageSize.value,
-      seek_seconds: seekSeconds.value,
-      proxy: proxy.value.trim(),
-      dlsite_base: dlsite_base.value.trim(),
-      dlsite_path: dlsite_path.value.trim(),
-      cover_dir: coverDir.value.trim(),
-      recommendation_enabled: recEnabled.value,
-      recommendation_auto_calc: recAutoCalc.value,
-      wallpaper_blur: wallpaperBlur.value,
-      panel_opacity: panelOpacity.value,
-      filelist_opacity: filelistOpacity.value,
-      control_opacity: controlOpacity.value,
-      card_size: cardSize.value,
-      card_width: cardWidth.value,
-      theme_color_nav: (themeColors.theme_color_nav || '').trim(),
-      theme_color_actor: (themeColors.theme_color_actor || '').trim(),
-      theme_color_tag: (themeColors.theme_color_tag || '').trim(),
-      actor_tag_opacity: actorTagOpacity.value,
-      genre_tag_opacity: genreTagOpacity.value,
-      animation_duration: animationDuration.value,
-    })
+    await store.save(currentPayload())
     applyAppearance() // 立即生效，无需刷新页面
-    ElMessage.success('已保存')
+    if (showMessage) ElMessage.success('已保存')
   } catch (e) {
     ElMessage.error('保存失败: ' + (e as Error).message)
   } finally {
@@ -794,6 +921,33 @@ function resetThemeColors() {
   font-weight: 600;
   font-size: 16px;
 }
+/* ---- 系统设置大模块：外层一张卡，内部各设置项用细线分隔 ---- */
+.big-card {
+  gap: 6px;
+}
+.big-title {
+  font-size: 17px;
+}
+.big-card-body {
+  display: flex;
+  flex-direction: column;
+}
+.big-card-body .sub-card {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 14px 0;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+}
+.big-card-body .sub-card:first-child {
+  border-top: none;
+  padding-top: 2px;
+}
+.big-card-body .sub-card .card-title {
+  font-size: 14px;
+  color: var(--accent);
+}
 .paths {
   display: flex;
   flex-direction: column;
@@ -956,6 +1110,9 @@ function resetThemeColors() {
   object-fit: cover;
   display: block;
 }
+.wallpaper-preview.off img {
+  opacity: 0.45;
+}
 .wallpaper-empty {
   color: var(--muted);
   font-size: 12px;
@@ -1025,6 +1182,55 @@ function resetThemeColors() {
 }
 .color-reset {
   padding-top: 6px;
+}
+
+/* ---- 自动保存倒计时提示 ---- */
+.save-toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 320;
+  max-width: calc(100vw - 24px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 14px;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.save-toast-close {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.save-toast-close:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.save-toast-enter-active,
+.save-toast-leave-active {
+  transition: opacity calc(var(--anim-duration) * 1.2) ease,
+    transform calc(var(--anim-duration) * 1.2) ease;
+}
+.save-toast-enter-from,
+.save-toast-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 12px);
 }
 
 /*

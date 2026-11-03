@@ -18,7 +18,7 @@
         <SidebarIcon v-if="icon" :name="icon" />
         <span class="sidebar-label">{{ label }}</span>
         <span v-if="hasActive" class="sidebar-badge">{{ activeValues.length }}</span>
-        <span class="sidebar-caret">▸</span>
+        <span class="sidebar-caret" :class="{ open: visible }">▸</span>
       </button>
       <el-button v-else :type="hasActive ? 'primary' : 'default'" plain size="default">
         {{ label }}<span class="caret">▾</span>
@@ -46,14 +46,6 @@
       </div>
     </div>
   </el-popover>
-
-  <!--
-    弹层打开时铺一层透明遮罩：挡住底层页面的 hover / 点击。
-    点遮罩只会关闭弹层，不会顺带触发下面的卡片等操作。
-  -->
-  <Teleport to="body">
-    <div v-if="visible" class="filter-backdrop" @click="visible = false" />
-  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -121,15 +113,16 @@ function onFav(it: { name: string; category?: string }) {
 </script>
 
 <style scoped>
-/*
- * 透明遮罩：比 Element Plus 弹层（z-index 2000+）低一层，
- * 但高于页面内容，用来截获弹层打开期间的鼠标事件。
- */
-.filter-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1999;
-  background: transparent;
+/* 右侧三角形：默认指向左边，弹层展开后指向右边 */
+.sidebar-caret {
+  font-size: 14px;
+  line-height: 1;
+  transform: rotate(180deg);
+  transition: transform calc(var(--anim-duration) * 0.8) ease,
+    opacity calc(var(--anim-duration) * 0.65) ease;
+}
+.sidebar-caret.open {
+  transform: rotate(0deg);
 }
 .caret {
   color: var(--muted);
