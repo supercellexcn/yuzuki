@@ -313,7 +313,7 @@ function onCommand(cmd: string) {
 .caret {
   margin-left: auto;
   color: var(--muted);
-  font-size: 18px;
+  font-size: 25px;
   line-height: 1;
   flex-shrink: 0;
   transition: opacity calc(var(--anim-duration) * 0.65) ease;

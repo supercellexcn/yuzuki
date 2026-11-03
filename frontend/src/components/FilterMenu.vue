@@ -115,7 +115,7 @@ function onFav(it: { name: string; category?: string }) {
 <style scoped>
 /* 右侧三角形：默认指向左边，弹层展开后指向右边 */
 .sidebar-caret {
-  font-size: 18px;
+  font-size: 25px;
   line-height: 1;
   transform: rotate(180deg);
   transition: transform calc(var(--anim-duration) * 0.8) ease,

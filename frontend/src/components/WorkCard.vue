@@ -10,15 +10,21 @@
       <div v-else class="cover-placeholder">{{ work.rj_code }}</div>
       <!-- RJ 号叠加在封面左上角 -->
       <div class="rj-badge">{{ work.rj_code }}</div>
-      <!-- 图片模式（M）下用 5 格热度条暗示销量，不显示具体数字 -->
+      <!-- 图片模式（M）下用定性热度徽标暗示销量，不显示具体数字 -->
       <div
-        v-if="work.sales_count != null"
-        class="sales-meter"
-        :class="{ 'show-sales': imageOnly }"
-        title="销量热度"
-        aria-label="销量热度"
+        v-if="salesLevel"
+        class="sales-badge"
+        :class="[salesLevel.tone, { 'show-sales': imageOnly }]"
+        :title="`销量热度 · ${salesLevel.label}`"
+        :aria-label="`销量热度：${salesLevel.label}`"
       >
-        <span v-for="i in 5" :key="i" class="sales-bar" :class="{ on: i <= salesTier }" />
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M12 2c1.2 4.2-2.8 5.4-2.8 9.2a2.8 2.8 0 0 0 5.6 0c0-1.6-1-2.7-1-4.2 2.2 1.1 4.2 3.7 4.2 7a6 6 0 0 1-12 0C6 9.4 9 6.4 12 2Z"
+          />
+        </svg>
+        <span>{{ salesLevel.label }}</span>
       </div>
       <!-- 类型标签叠加在封面上（桌面长按收藏标签） -->
       <div v-if="work.tags.length" class="cover-tags">
@@ -101,17 +107,17 @@ const { imageOnly } = useViewMode()
 const { fav } = useFavorite()
 
 /**
- * 销量热度（0-5 格，不显示具体数字）。
- * 用固定档位而非线性比例，既能快速感知冷热，也不会让头部作品把其他作品压成 0 格。
+ * 销量热度：用简洁的定性徽标代替数字。
+ * 固定档位既能快速感知冷热，也不会被头部作品把其他作品全部压成「冷门」。
  */
-const salesTier = computed(() => {
+const salesLevel = computed(() => {
   const n = props.work.sales_count
-  if (n == null || n <= 0) return 0
-  if (n >= 20000) return 5
-  if (n >= 5000) return 4
-  if (n >= 1000) return 3
-  if (n >= 200) return 2
-  return 1
+  if (n == null) return null
+  if (n >= 20000) return { label: '爆款', tone: 't5' }
+  if (n >= 5000) return { label: '大热', tone: 't4' }
+  if (n >= 1000) return { label: '热门', tone: 't3' }
+  if (n >= 200) return { label: '小众', tone: 't2' }
+  return { label: '冷门', tone: 't1' }
 })
 
 function go() {
@@ -182,47 +188,49 @@ function openFavPicker() {
   user-select: none;
 }
 /*
- * 图片模式下的销量热度：封面右上角 5 格小柱状条。
- * 只在 M 模式淡入，普通模式已有具体销量行，不需要重复展示。
+ * 图片模式下的销量热度徽标：封面右上角，定性显示冷热不带数字。
+ * 只在 M 模式淡入，普通模式已有具体销量行。
  */
-.sales-meter {
+.sales-badge {
   position: absolute;
   top: 6px;
   right: 6px;
   display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  padding: 5px 6px;
-  border-radius: 7px;
-  background: rgba(10, 12, 16, 0.72);
+  align-items: center;
+  gap: 3px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(10, 12, 16, 0.78);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
   opacity: 0;
   pointer-events: none;
   user-select: none;
   transition: opacity var(--anim-duration) ease;
 }
-.sales-meter.show-sales {
+.sales-badge.show-sales {
   opacity: 1;
 }
-.sales-bar {
-  width: 4px;
-  height: 7px;
-  border-radius: 1px;
-  background: rgba(255, 255, 255, 0.28);
+.sales-badge svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
 }
-.sales-bar:nth-child(2) {
-  height: 10px;
+.sales-badge.t1 {
+  color: #9aa3b0;
 }
-.sales-bar:nth-child(3) {
-  height: 13px;
+.sales-badge.t2 {
+  color: #6fc3b5;
 }
-.sales-bar:nth-child(4) {
-  height: 16px;
+.sales-badge.t3 {
+  color: #f2a65a;
 }
-.sales-bar:nth-child(5) {
-  height: 19px;
+.sales-badge.t4 {
+  color: #f07a4b;
 }
-.sales-bar.on {
-  background: #f2c14e;
+.sales-badge.t5 {
+  color: #ffd166;
 }
 .cover-tags {
   position: absolute;
