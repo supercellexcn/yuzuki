@@ -468,6 +468,14 @@ function onRecPointerDown(e: PointerEvent) {
   overflow-x: auto;
   padding-bottom: 4px;
 }
+/*
+ * 图片模式下销量火焰有 2/3 在卡片上边框外侧；
+ * .rec 是横向滚动容器（overflow-x: auto 会同时裁切纵向溢出），
+ * 给它留出顶部空间，火焰才不会被切掉。
+ */
+html.image-only .rec {
+  padding-top: 18px;
+}
 .rec.dragging {
   cursor: grabbing;
   user-select: none;
