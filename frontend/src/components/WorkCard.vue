@@ -10,21 +10,35 @@
       <div v-else class="cover-placeholder">{{ work.rj_code }}</div>
       <!-- RJ 号叠加在封面左上角 -->
       <div class="rj-badge">{{ work.rj_code }}</div>
-      <!-- 图片模式（M）下用定性热度徽标暗示销量，不显示具体数字 -->
+      <!-- 图片模式（M）下用火焰数量和颜色暗示销量，不显示具体数字 -->
       <div
-        v-if="salesLevel"
-        class="sales-badge"
-        :class="[salesLevel.tone, { 'show-sales': imageOnly }]"
-        :title="`销量热度 · ${salesLevel.label}`"
-        :aria-label="`销量热度：${salesLevel.label}`"
+        v-if="flames"
+        class="sales-flames"
+        :class="{ 'show-sales': imageOnly }"
+        title="销量热度"
+        aria-label="销量热度"
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
+        <svg
+          v-for="i in flames.count"
+          :key="i"
+          class="flame"
+          :class="[`flame-${flames.color}`, { 'flame-animated': flames.animated }]"
+          :style="{ '--flame-delay': `${(i - 1) * 0.18}s` }"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
           <path
+            class="flame-outer"
             fill="currentColor"
             d="M12 2c1.2 4.2-2.8 5.4-2.8 9.2a2.8 2.8 0 0 0 5.6 0c0-1.6-1-2.7-1-4.2 2.2 1.1 4.2 3.7 4.2 7a6 6 0 0 1-12 0C6 9.4 9 6.4 12 2Z"
           />
+          <path
+            class="flame-inner"
+            fill="#ffffff"
+            transform="translate(12 19) scale(0.45) translate(-12 -19)"
+            d="M12 2c1.2 4.2-2.8 5.4-2.8 9.2a2.8 2.8 0 0 0 5.6 0c0-1.6-1-2.7-1-4.2 2.2 1.1 4.2 3.7 4.2 7a6 6 0 0 1-12 0C6 9.4 9 6.4 12 2Z"
+          />
         </svg>
-        <span>{{ salesLevel.label }}</span>
       </div>
       <!-- 类型标签叠加在封面上（桌面长按收藏标签） -->
       <div v-if="work.tags.length" class="cover-tags">
@@ -107,17 +121,23 @@ const { imageOnly } = useViewMode()
 const { fav } = useFavorite()
 
 /**
- * 销量热度：用简洁的定性徽标代替数字。
- * 固定档位既能快速感知冷热，也不会被头部作品把其他作品全部压成「冷门」。
+ * 销量火焰：
+ * <1000 一朵灰色；1000-2999 一朵黄色；
+ * 3000-5999 一朵红色；6000-9999 两朵红色；
+ * 10000 起两朵红焰开始摆动，每多 5000 再加一朵，最多 3 朵。
  */
-const salesLevel = computed(() => {
+const flames = computed(() => {
   const n = props.work.sales_count
   if (n == null) return null
-  if (n >= 20000) return { label: '爆款', tone: 't5' }
-  if (n >= 5000) return { label: '大热', tone: 't4' }
-  if (n >= 1000) return { label: '热门', tone: 't3' }
-  if (n >= 200) return { label: '小众', tone: 't2' }
-  return { label: '冷门', tone: 't1' }
+  if (n < 1000) return { color: 'gray', count: 1, animated: false }
+  if (n < 3000) return { color: 'yellow', count: 1, animated: false }
+  if (n < 6000) return { color: 'red', count: 1, animated: false }
+  if (n < 10000) return { color: 'red', count: 2, animated: false }
+  return {
+    color: 'red',
+    count: Math.min(3, 2 + Math.floor((n - 10000) / 5000)),
+    animated: true,
+  }
 })
 
 function go() {
@@ -188,49 +208,84 @@ function openFavPicker() {
   user-select: none;
 }
 /*
- * 图片模式下的销量热度徽标：封面右上角，定性显示冷热不带数字。
+ * 图片模式下的销量火焰：封面右上角，用数量 + 颜色表达热度，不带文字。
  * 只在 M 模式淡入，普通模式已有具体销量行。
  */
-.sales-badge {
+.sales-flames {
   position: absolute;
   top: 6px;
   right: 6px;
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 4px 7px;
+  gap: 2px;
+  padding: 4px 5px;
   border-radius: 999px;
-  background: rgba(10, 12, 16, 0.78);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
+  background: rgba(10, 12, 16, 0.72);
   opacity: 0;
   pointer-events: none;
   user-select: none;
   transition: opacity var(--anim-duration) ease;
 }
-.sales-badge.show-sales {
+.sales-flames.show-sales {
   opacity: 1;
 }
-.sales-badge svg {
-  width: 12px;
-  height: 12px;
+.flame {
+  width: 15px;
+  height: 15px;
+  display: block;
   flex-shrink: 0;
+  overflow: visible;
 }
-.sales-badge.t1 {
+.flame-gray {
   color: #9aa3b0;
 }
-.sales-badge.t2 {
-  color: #6fc3b5;
+.flame-yellow {
+  color: #f2c14e;
 }
-.sales-badge.t3 {
-  color: #f2a65a;
+.flame-red {
+  color: #f05a4b;
 }
-.sales-badge.t4 {
-  color: #f07a4b;
+.flame-inner {
+  opacity: 0.5;
 }
-.sales-badge.t5 {
-  color: #ffd166;
+/* 10000+ 的红色火焰：整朵左右摆动，内层高光呼吸 */
+.flame-animated {
+  transform-origin: 50% 100%;
+  animation: flame-sway 1.4s ease-in-out infinite;
+  animation-delay: var(--flame-delay, 0s);
+}
+.flame-animated .flame-inner {
+  animation: flame-glow 1.4s ease-in-out infinite;
+  animation-delay: var(--flame-delay, 0s);
+}
+@keyframes flame-sway {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+@keyframes flame-glow {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+/* 设置里关闭动画（--anim-duration: 0）或系统开启减少动态时，火焰保持静止 */
+html.no-anim .flame-animated,
+html.no-anim .flame-animated .flame-inner {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .flame-animated,
+  .flame-animated .flame-inner {
+    animation: none;
+  }
 }
 .cover-tags {
   position: absolute;
