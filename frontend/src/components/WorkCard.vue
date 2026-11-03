@@ -10,36 +10,6 @@
       <div v-else class="cover-placeholder">{{ work.rj_code }}</div>
       <!-- RJ 号叠加在封面左上角 -->
       <div class="rj-badge">{{ work.rj_code }}</div>
-      <!-- 图片模式（M）下用火焰数量和颜色暗示销量，不显示具体数字 -->
-      <div
-        v-if="flames"
-        class="sales-flames"
-        :class="{ 'show-sales': imageOnly }"
-        title="销量热度"
-        aria-label="销量热度"
-      >
-        <svg
-          v-for="i in flames.count"
-          :key="i"
-          class="flame"
-          :class="[`flame-${flames.color}`, { 'flame-animated': flames.animated }]"
-          :style="{ '--flame-delay': `${(i - 1) * 0.18}s` }"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-        >
-          <path
-            class="flame-outer"
-            fill="currentColor"
-            d="M12 2c1.2 4.2-2.8 5.4-2.8 9.2a2.8 2.8 0 0 0 5.6 0c0-1.6-1-2.7-1-4.2 2.2 1.1 4.2 3.7 4.2 7a6 6 0 0 1-12 0C6 9.4 9 6.4 12 2Z"
-          />
-          <path
-            class="flame-inner"
-            fill="#ffffff"
-            transform="translate(12 19) scale(0.45) translate(-12 -19)"
-            d="M12 2c1.2 4.2-2.8 5.4-2.8 9.2a2.8 2.8 0 0 0 5.6 0c0-1.6-1-2.7-1-4.2 2.2 1.1 4.2 3.7 4.2 7a6 6 0 0 1-12 0C6 9.4 9 6.4 12 2Z"
-          />
-        </svg>
-      </div>
       <!-- 类型标签叠加在封面上（桌面长按收藏标签） -->
       <div v-if="work.tags.length" class="cover-tags">
         <span
@@ -52,6 +22,52 @@
           >{{ t.name }}</span
         >
       </div>
+    </div>
+    <!-- 销量火焰：贴在卡片右上角边框上（仅图片模式） -->
+    <div
+      v-if="flames && imageOnly"
+      class="sales-flames"
+      title="销量热度"
+      aria-label="销量热度"
+    >
+      <template v-if="flames.kind === 'rainbow'">
+        <svg class="flame flame-big" viewBox="0 0 24 24" aria-hidden="true">
+          <defs>
+            <linearGradient :id="gradientId" x1="0" y1="1" x2="1" y2="0">
+              <stop offset="0%" stop-color="#f05a4b" />
+              <stop offset="28%" stop-color="#f2c14e" />
+              <stop offset="52%" stop-color="#7bd88f" />
+              <stop offset="76%" stop-color="#6ea8fe" />
+              <stop offset="100%" stop-color="#a78bfa" />
+            </linearGradient>
+          </defs>
+          <path :fill="`url(#${gradientId})`" :d="FLAME_PATH" />
+          <path
+            class="flame-inner"
+            fill="#ffffff"
+            :transform="FLAME_INNER_TRANSFORM"
+            :d="FLAME_PATH"
+          />
+        </svg>
+      </template>
+      <template v-else>
+        <svg
+          v-for="i in flames.count"
+          :key="i"
+          class="flame"
+          :class="`flame-${flames.kind}`"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path fill="currentColor" :d="FLAME_PATH" />
+          <path
+            class="flame-inner"
+            fill="#ffffff"
+            :transform="FLAME_INNER_TRANSFORM"
+            :d="FLAME_PATH"
+          />
+        </svg>
+      </template>
     </div>
     <!-- 移动端：长按非封面区域（信息区）打开收藏选择器 -->
     <div class="meta" v-longpress="isMobile ? openFavPicker : undefined">
@@ -120,24 +136,27 @@ const favorites = useFavoritesStore()
 const { imageOnly } = useViewMode()
 const { fav } = useFavorite()
 
+const FLAME_PATH =
+  'M12 2c1.2 4.2-2.8 5.4-2.8 9.2a2.8 2.8 0 0 0 5.6 0c0-1.6-1-2.7-1-4.2 2.2 1.1 4.2 3.7 4.2 7a6 6 0 0 1-12 0C6 9.4 9 6.4 12 2Z'
+const FLAME_INNER_TRANSFORM = 'translate(12 19) scale(0.45) translate(-12 -19)'
+
 /**
  * 销量火焰：
- * <1000 一朵灰色；1000-2999 一朵黄色；
- * 3000-5999 一朵红色；6000-9999 两朵红色；
- * 10000 起两朵红焰开始摆动，每多 5000 再加一朵，最多 3 朵。
+ * ≤1000 一朵灰色；1000-2999 一朵黄色；
+ * 3000-5999 两朵黄色；6000-9999 三朵黄色；
+ * 10000-12999 一朵红色；之后每 3000 追加一朵，最多 3 朵；
+ * ≥19999 一朵大的彩色火焰。
  */
+const gradientId = computed(() => `flame-grad-${props.work.id}`)
 const flames = computed(() => {
   const n = props.work.sales_count
   if (n == null) return null
-  if (n < 1000) return { color: 'gray', count: 1, animated: false }
-  if (n < 3000) return { color: 'yellow', count: 1, animated: false }
-  if (n < 6000) return { color: 'red', count: 1, animated: false }
-  if (n < 10000) return { color: 'red', count: 2, animated: false }
-  return {
-    color: 'red',
-    count: Math.min(3, 2 + Math.floor((n - 10000) / 5000)),
-    animated: true,
-  }
+  if (n <= 1000) return { kind: 'gray', count: 1 }
+  if (n < 3000) return { kind: 'yellow', count: 1 }
+  if (n < 6000) return { kind: 'yellow', count: 2 }
+  if (n < 10000) return { kind: 'yellow', count: 3 }
+  if (n >= 19999) return { kind: 'rainbow', count: 1 }
+  return { kind: 'red', count: Math.min(3, 1 + Math.floor((n - 10000) / 3000)) }
 })
 
 function go() {
@@ -154,7 +173,9 @@ function openFavPicker() {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
-  overflow: hidden;
+  /* 火焰要压在卡片上边框外侧，所以不能整卡裁剪；圆角交给封面 / 信息区各自处理 */
+  position: relative;
+  overflow: visible;
   cursor: pointer;
   transition: transform var(--anim-duration), border-color var(--anim-duration);
   display: flex;
@@ -175,6 +196,7 @@ function openFavPicker() {
   background: #0d0f12;
   overflow: hidden;
   position: relative;
+  border-radius: 9px 9px 0 0;
 }
 .cover img {
   width: 100%;
@@ -208,26 +230,21 @@ function openFavPicker() {
   user-select: none;
 }
 /*
- * 图片模式下的销量火焰：封面右上角，用数量 + 颜色表达热度，不带文字。
- * 只在 M 模式淡入，普通模式已有具体销量行。
+ * 销量火焰：贴在卡片右上角边框上，仅图片模式显示。
+ * 上半截在卡片外、下半截压住封面，不做任何动画。
  */
 .sales-flames {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 0;
+  right: 10px;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 4px 5px;
-  border-radius: 999px;
-  background: rgba(10, 12, 16, 0.72);
-  opacity: 0;
+  z-index: 2;
   pointer-events: none;
   user-select: none;
-  transition: opacity var(--anim-duration) ease;
-}
-.sales-flames.show-sales {
-  opacity: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
 }
 .flame {
   width: 15px;
@@ -235,6 +252,10 @@ function openFavPicker() {
   display: block;
   flex-shrink: 0;
   overflow: visible;
+}
+.flame-big {
+  width: 24px;
+  height: 24px;
 }
 .flame-gray {
   color: #9aa3b0;
@@ -247,45 +268,6 @@ function openFavPicker() {
 }
 .flame-inner {
   opacity: 0.5;
-}
-/* 10000+ 的红色火焰：整朵左右摆动，内层高光呼吸 */
-.flame-animated {
-  transform-origin: 50% 100%;
-  animation: flame-sway 1.4s ease-in-out infinite;
-  animation-delay: var(--flame-delay, 0s);
-}
-.flame-animated .flame-inner {
-  animation: flame-glow 1.4s ease-in-out infinite;
-  animation-delay: var(--flame-delay, 0s);
-}
-@keyframes flame-sway {
-  0%,
-  100% {
-    transform: rotate(-4deg);
-  }
-  50% {
-    transform: rotate(4deg);
-  }
-}
-@keyframes flame-glow {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 0.75;
-  }
-}
-/* 设置里关闭动画（--anim-duration: 0）或系统开启减少动态时，火焰保持静止 */
-html.no-anim .flame-animated,
-html.no-anim .flame-animated .flame-inner {
-  animation: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  .flame-animated,
-  .flame-animated .flame-inner {
-    animation: none;
-  }
 }
 .cover-tags {
   position: absolute;
@@ -328,6 +310,7 @@ html.no-anim .flame-animated .flame-inner {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  border-radius: 0 0 9px 9px;
   /* 卡片下半部分底色：由主题色决定 */
   background: var(--card-meta-bg);
   /*

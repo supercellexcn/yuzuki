@@ -204,8 +204,6 @@ export function useAppearance() {
     const anim = Number(s.animation_duration)
     const animSec = Number.isFinite(anim) ? Math.max(0, Math.min(1, anim)) : DEFAULT_ANIM_SECONDS
     root.style.setProperty('--anim-duration', `${animSec}s`)
-    // 0 秒表示关闭动画：给火焰等常驻装饰动画一个可查询的全局开关
-    root.classList.toggle('no-anim', animSec === 0)
 
     // ---- 主题色：导航栏 + 全站强调色（hover 框线 / 播放条 / 选中态…）----
     const nav = s.theme_color_nav
