@@ -2,7 +2,7 @@
   <aside class="sidebar" :class="{ collapsed }">
     <!-- 网站图标 + 站名：点击回媒体库首页 -->
     <router-link to="/" class="sidebar-brand" title="返回首页" @click="onNavigate">
-      <img src="/favicon.jpg" alt="Yuzuki" />
+      <SiteIcon :size="34" :radius="9" />
       <span class="sidebar-brand-name">Yuzuki</span>
     </router-link>
 
@@ -127,6 +127,7 @@ import { useAuthStore } from '../stores/auth'
 import { useIsMobile } from '../composables/useIsMobile'
 import FilterMenu from './FilterMenu.vue'
 import SidebarIcon from './SidebarIcon.vue'
+import SiteIcon from './SiteIcon.vue'
 
 defineProps<{ collapsed: boolean }>()
 const emit = defineEmits<{ (e: 'navigate'): void }>()
@@ -247,16 +248,6 @@ function onCommand(cmd: string) {
 .sidebar-brand:visited {
   text-decoration: none;
   outline: none;
-}
-.sidebar-brand img {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  /* favicon 是横版白底插画：用 cover 铺满图标，避免 contain 留下大片白边 */
-  object-fit: cover;
-  background: transparent;
-  display: block;
-  flex-shrink: 0;
 }
 .sidebar-brand-name {
   font-size: 18px;

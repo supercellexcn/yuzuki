@@ -32,7 +32,7 @@
           <SidebarIcon name="menu" />
         </button>
         <router-link v-if="!showChrome" to="/" class="topbar-logo" title="Yuzuki">
-          <img src="/favicon.jpg" alt="Yuzuki" />
+          <SiteIcon :size="30" :radius="8" />
         </router-link>
 
         <!-- 媒体库的搜索 / 排序控件搬到顶栏，合并成一条紧凑控件 -->
@@ -133,6 +133,7 @@ import FavPicker from './components/FavPicker.vue'
 import SearchBar from './components/SearchBar.vue'
 import SidebarIcon from './components/SidebarIcon.vue'
 import MobileDock from './components/MobileDock.vue'
+import SiteIcon from './components/SiteIcon.vue'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -248,6 +249,8 @@ function scrollToTop() {
 
 <style>
 :root {
+  /* 页面本身已是深色，声明 color-scheme 避免手机浏览器夜间模式再次反色 */
+  color-scheme: dark;
   --bg: #121417;
   /* 面板/页面底色拆成 rgb + alpha：接入壁纸时 alpha < 1，壁纸才能透出来 */
   --bg-rgb: 18, 20, 23;
@@ -515,14 +518,6 @@ body {
 .topbar-logo {
   display: inline-flex;
   flex-shrink: 0;
-}
-.topbar-logo img {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  object-fit: cover;
-  background: transparent;
-  display: block;
 }
 .top-btn {
   width: 36px;
