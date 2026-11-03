@@ -238,6 +238,15 @@ function onCommand(cmd: string) {
   gap: 10px;
   padding: 12px 15px 6px;
   overflow: hidden;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.sidebar-brand:hover,
+.sidebar-brand:focus,
+.sidebar-brand:active,
+.sidebar-brand:visited {
+  text-decoration: none;
+  outline: none;
 }
 .sidebar-brand img {
   width: 34px;

@@ -6,9 +6,6 @@
     :class="{ dragging }"
     :style="{ left: x + 'px', top: y + 'px' }"
     @pointerdown="onPointerDown"
-    @pointermove="onPointerMove"
-    @pointerup="onPointerUp"
-    @pointercancel="onPointerUp"
     @click.capture="onClickCapture"
   >
     <button class="dock-btn" title="返回首页" @click="goHome">
@@ -109,7 +106,22 @@ onMounted(() => {
   ready.value = true
   window.addEventListener('resize', syncPosition)
 })
-onUnmounted(() => window.removeEventListener('resize', syncPosition))
+onUnmounted(() => {
+  window.removeEventListener('resize', syncPosition)
+  removeDragListeners()
+})
+
+/** 拖动过程中监听 window，指针移出按钮 / 侧栏也能继续跟手。 */
+function addDragListeners() {
+  window.addEventListener('pointermove', onPointerMove)
+  window.addEventListener('pointerup', onPointerUp)
+  window.addEventListener('pointercancel', onPointerUp)
+}
+function removeDragListeners() {
+  window.removeEventListener('pointermove', onPointerMove)
+  window.removeEventListener('pointerup', onPointerUp)
+  window.removeEventListener('pointercancel', onPointerUp)
+}
 
 function onPointerDown(e: PointerEvent) {
   if (e.pointerType === 'mouse' && e.button !== 0) return
@@ -124,11 +136,7 @@ function onPointerDown(e: PointerEvent) {
   startTop = r.top
   moved = false
   pointerId = e.pointerId
-  try {
-    el.setPointerCapture(e.pointerId)
-  } catch {
-    /* 忽略 */
-  }
+  addDragListeners()
 }
 
 function onPointerMove(e: PointerEvent) {
@@ -144,9 +152,9 @@ function onPointerMove(e: PointerEvent) {
 
 function onPointerUp(e: PointerEvent) {
   if (e.pointerId !== pointerId) return
-  dragEnd(e)
+  dragEnd()
 }
-function dragEnd(e: PointerEvent) {
+function dragEnd() {
   if (moved) {
     side.value = x.value + DOCK_W / 2 < window.innerWidth / 2 ? 'left' : 'right'
     syncPosition()
@@ -157,11 +165,7 @@ function dragEnd(e: PointerEvent) {
   dragging.value = false
   moved = false
   pointerId = -1
-  try {
-    dockRef.value?.releasePointerCapture(e.pointerId)
-  } catch {
-    /* 忽略 */
-  }
+  removeDragListeners()
 }
 function onClickCapture(e: MouseEvent) {
   if (Date.now() < suppressClickUntil) {

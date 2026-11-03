@@ -409,10 +409,14 @@ const coverFileInput = ref<HTMLInputElement | null>(null)
 
 const saving = ref(false)
 const autoSavePending = ref(false)
-const autoSaveSeconds = ref(3)
+const autoSaveSeconds = ref(10)
+let autoSaveDelayTimer: number | undefined
 let autoSaveCountdown: number | undefined
 /** 初始化 / 取消修改回填表单时，避免被 watch 当成用户修改 */
 let suppressAutoSave = true
+/** 停止修改 3 秒后才弹出提示，随后倒计时 10 秒再保存。 */
+const AUTO_SAVE_DELAY_MS = 3000
+const AUTO_SAVE_COUNTDOWN = 10
 const scanning = ref(false)
 const scanJob = ref<ScanJob | null>(null)
 const coverRunning = ref(false)
@@ -434,6 +438,8 @@ const {
   apply: applyAppearance,
   refreshWallpapers,
   bumpWallpaperVersion,
+  previewWallpaperEnabled,
+  clearWallpaperEnabledPreview,
 } = useAppearance()
 const wallpaperBlur = ref(20)
 const panelOpacity = ref(62)
@@ -569,25 +575,35 @@ const formState = computed(() => [
 ])
 
 function clearAutoSaveTimers() {
+  if (autoSaveDelayTimer !== undefined) {
+    clearTimeout(autoSaveDelayTimer)
+    autoSaveDelayTimer = undefined
+  }
   if (autoSaveCountdown !== undefined) {
     clearInterval(autoSaveCountdown)
     autoSaveCountdown = undefined
   }
 }
 
-/** 表单变化后 3 秒保存；期间显示倒计时，可点 × 取消。 */
+/** 停止修改 3 秒后弹出提示，再倒计时 10 秒保存；期间可点 × 取消。 */
 function scheduleAutoSave() {
   if (suppressAutoSave) return
   clearAutoSaveTimers()
-  autoSaveSeconds.value = 3
-  autoSavePending.value = true
-  autoSaveCountdown = window.setInterval(() => {
-    autoSaveSeconds.value -= 1
-    if (autoSaveSeconds.value <= 0) {
-      clearAutoSaveTimers()
-      void save(false)
-    }
-  }, 1000)
+  // 恢复修改期间先收起旧提示，等这次改完 3 秒后再出现
+  autoSavePending.value = false
+  autoSaveSeconds.value = AUTO_SAVE_COUNTDOWN
+  autoSaveDelayTimer = window.setTimeout(() => {
+    autoSaveDelayTimer = undefined
+    autoSavePending.value = true
+    autoSaveSeconds.value = AUTO_SAVE_COUNTDOWN
+    autoSaveCountdown = window.setInterval(() => {
+      autoSaveSeconds.value -= 1
+      if (autoSaveSeconds.value <= 0) {
+        clearAutoSaveTimers()
+        void save(false)
+      }
+    }, 1000)
+  }, AUTO_SAVE_DELAY_MS)
 }
 watch(formState, () => scheduleAutoSave())
 
@@ -597,6 +613,7 @@ async function cancelAutoSave() {
   autoSavePending.value = false
   suppressAutoSave = true
   applySettingsToForm(store.settings)
+  clearWallpaperEnabledPreview()
   await nextTick()
   suppressAutoSave = false
   ElMessage.info('已取消本次修改')
@@ -604,6 +621,8 @@ async function cancelAutoSave() {
 
 function toggleWallpaper(kind: WallpaperKind) {
   wallpaperEnabled[kind] = !wallpaperEnabled[kind]
+  // 壁纸启停立即预览，不必等自动保存
+  previewWallpaperEnabled(kind, wallpaperEnabled[kind])
 }
 
 onMounted(async () => {
@@ -623,6 +642,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearAutoSaveTimers()
+  clearWallpaperEnabledPreview()
   stopPolling()
   stopCoverPolling()
   stopRecPolling()

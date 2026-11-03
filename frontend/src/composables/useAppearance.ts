@@ -51,6 +51,8 @@ const CARD_META_ALPHA = 0.26
 // ---- 模块级共享状态（多个组件调用 useAppearance 时共用同一份）----
 const hasWallpaperDesktop = ref(false)
 const hasWallpaperMobile = ref(false)
+/** 设置页切换「启用 / 停用」时的即时预览（保存前也让界面立刻响应）。 */
+const wallpaperEnabledPreview = ref<Partial<Record<WallpaperKind, boolean>>>({})
 /** 上传 / 删除壁纸后自增，用于给图片 URL 破缓存 */
 const wallpaperVersion = ref(0)
 
@@ -154,6 +156,8 @@ export function useAppearance() {
   )
   /** 当前端壁纸是否启用（文件存在但被停用时，不应用到页面）。 */
   const currentWallpaperEnabled = computed(() => {
+    const preview = wallpaperEnabledPreview.value[currentKind.value]
+    if (preview !== undefined) return preview
     const s = settings.settings
     if (!s) return false
     return currentKind.value === 'mobile'
@@ -267,6 +271,18 @@ export function useAppearance() {
     await refreshWallpapers()
   }
 
+  /** 设置页切换壁纸启停时的即时预览（无需等待自动保存）。 */
+  function previewWallpaperEnabled(kind: WallpaperKind, enabled: boolean): void {
+    wallpaperEnabledPreview.value = { ...wallpaperEnabledPreview.value, [kind]: enabled }
+    apply()
+  }
+
+  /** 取消未保存的修改 / 离开设置页时，撤掉预览，回到已保存的设置。 */
+  function clearWallpaperEnabledPreview(): void {
+    wallpaperEnabledPreview.value = {}
+    apply()
+  }
+
   if (!wired) {
     wired = true
     let wallpapersChecked = false
@@ -303,5 +319,7 @@ export function useAppearance() {
     apply,
     refreshWallpapers,
     bumpWallpaperVersion,
+    previewWallpaperEnabled,
+    clearWallpaperEnabledPreview,
   }
 }
