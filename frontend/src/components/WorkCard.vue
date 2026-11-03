@@ -235,9 +235,10 @@ function openFavPicker() {
  */
 .sales-flames {
   position: absolute;
+  /* 向上偏移 2/3：火焰 2/3 在卡片外、1/3 压在封面上，边框处更醒目 */
   top: 0;
   right: 10px;
-  transform: translateY(-50%);
+  transform: translateY(-66.6667%);
   display: flex;
   align-items: center;
   gap: 2px;
