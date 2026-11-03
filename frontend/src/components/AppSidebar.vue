@@ -313,8 +313,13 @@ function onCommand(cmd: string) {
 .caret {
   margin-left: auto;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 18px;
+  line-height: 1;
   flex-shrink: 0;
+  transition: opacity calc(var(--anim-duration) * 0.65) ease;
+}
+.sidebar.collapsed .caret {
+  opacity: 0;
 }
 .user-name {
   flex: initial;

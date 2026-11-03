@@ -132,6 +132,8 @@ export interface AppSettings {
   genre_tag_opacity: number
   /** 全局动画时长（秒，0-1）。0 表示关闭动画。 */
   animation_duration: number
+  /** 只读派生字段：后端当前是否存有默认封面（GET /settings 返回，不参与保存）。 */
+  has_default_cover?: boolean
 }
 
 export interface TagCount {

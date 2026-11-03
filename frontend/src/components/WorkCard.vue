@@ -10,6 +10,16 @@
       <div v-else class="cover-placeholder">{{ work.rj_code }}</div>
       <!-- RJ 号叠加在封面左上角 -->
       <div class="rj-badge">{{ work.rj_code }}</div>
+      <!-- 图片模式（M）下用 5 格热度条暗示销量，不显示具体数字 -->
+      <div
+        v-if="work.sales_count != null"
+        class="sales-meter"
+        :class="{ 'show-sales': imageOnly }"
+        title="销量热度"
+        aria-label="销量热度"
+      >
+        <span v-for="i in 5" :key="i" class="sales-bar" :class="{ on: i <= salesTier }" />
+      </div>
       <!-- 类型标签叠加在封面上（桌面长按收藏标签） -->
       <div v-if="work.tags.length" class="cover-tags">
         <span
@@ -66,12 +76,14 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { authedUrl } from '../api'
 import { CUSTOM_TAG } from '../api/types'
 import type { Work } from '../api/types'
 import { useFavorite } from '../composables/useFavorite'
 import { useIsMobile } from '../composables/useIsMobile'
+import { useViewMode } from '../composables/useViewMode'
 import { useFavoritesStore } from '../stores/favorites'
 
 const props = defineProps<{ work: Work }>()
@@ -85,7 +97,23 @@ const emit = defineEmits<{
 const router = useRouter()
 const isMobile = useIsMobile()
 const favorites = useFavoritesStore()
+const { imageOnly } = useViewMode()
 const { fav } = useFavorite()
+
+/**
+ * 销量热度（0-5 格，不显示具体数字）。
+ * 用固定档位而非线性比例，既能快速感知冷热，也不会让头部作品把其他作品压成 0 格。
+ */
+const salesTier = computed(() => {
+  const n = props.work.sales_count
+  if (n == null || n <= 0) return 0
+  if (n >= 20000) return 5
+  if (n >= 5000) return 4
+  if (n >= 1000) return 3
+  if (n >= 200) return 2
+  return 1
+})
+
 function go() {
   router.push({ name: 'player', params: { rj: props.work.rj_code } })
 }
@@ -152,6 +180,49 @@ function openFavPicker() {
   text-decoration: none;
   pointer-events: none;
   user-select: none;
+}
+/*
+ * 图片模式下的销量热度：封面右上角 5 格小柱状条。
+ * 只在 M 模式淡入，普通模式已有具体销量行，不需要重复展示。
+ */
+.sales-meter {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 5px 6px;
+  border-radius: 7px;
+  background: rgba(10, 12, 16, 0.72);
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  transition: opacity var(--anim-duration) ease;
+}
+.sales-meter.show-sales {
+  opacity: 1;
+}
+.sales-bar {
+  width: 4px;
+  height: 7px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.28);
+}
+.sales-bar:nth-child(2) {
+  height: 10px;
+}
+.sales-bar:nth-child(3) {
+  height: 13px;
+}
+.sales-bar:nth-child(4) {
+  height: 16px;
+}
+.sales-bar:nth-child(5) {
+  height: 19px;
+}
+.sales-bar.on {
+  background: #f2c14e;
 }
 .cover-tags {
   position: absolute;

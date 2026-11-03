@@ -20,7 +20,8 @@ import { startRecommendationCalc } from '../scanner/jobManager.js'
 export const settingsRouter = Router()
 
 settingsRouter.get('/', (_req, res) => {
-  res.json(getSettings())
+  // has_default_cover 是只读派生字段：让前端不用再 HEAD 一次封面接口（不存在时会产生 404 控制台报错）
+  res.json({ ...getSettings(), has_default_cover: Boolean(findDefaultCover()) })
 })
 
 settingsRouter.put('/', (req, res) => {

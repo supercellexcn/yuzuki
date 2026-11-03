@@ -382,7 +382,6 @@ import {
   resetLibrary,
   uploadDefaultCover,
   removeDefaultCover,
-  checkDefaultCover,
   defaultCoverUrl,
   startRecommendationCalc,
   getRecommendationStatus,
@@ -628,7 +627,7 @@ function toggleWallpaper(kind: WallpaperKind) {
 onMounted(async () => {
   const s = await store.load()
   applySettingsToForm(s)
-  hasDefaultCover.value = await checkDefaultCover().catch(() => false)
+  hasDefaultCover.value = s.has_default_cover === true
   scanJob.value = await getScanStatus()
   if (scanJob.value.status === 'running') startPolling()
   coverJob.value = await getCoverStatus()

@@ -140,15 +140,6 @@ export async function removeDefaultCover(): Promise<{ ok: boolean }> {
 }
 
 /** 默认封面是否已上传（HEAD 探测，不下载图片内容）。 */
-export async function checkDefaultCover(): Promise<boolean> {
-  try {
-    await http.head('/settings/default-cover')
-    return true
-  } catch {
-    return false
-  }
-}
-
 /** 默认封面预览 URL（带 token）。 */
 export function defaultCoverUrl(): string {
   return authedUrl('/api/settings/default-cover')
