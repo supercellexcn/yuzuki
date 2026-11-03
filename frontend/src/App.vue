@@ -520,8 +520,8 @@ body {
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  object-fit: contain;
-  background: #fff;
+  object-fit: cover;
+  background: transparent;
   display: block;
 }
 .top-btn {

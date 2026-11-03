@@ -252,8 +252,9 @@ function onCommand(cmd: string) {
   width: 34px;
   height: 34px;
   border-radius: 9px;
-  object-fit: contain;
-  background: #fff;
+  /* favicon 是横版白底插画：用 cover 铺满图标，避免 contain 留下大片白边 */
+  object-fit: cover;
+  background: transparent;
   display: block;
   flex-shrink: 0;
 }
