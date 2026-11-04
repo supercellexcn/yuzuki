@@ -362,6 +362,15 @@ html.has-nav-color .topbar .top-btn:hover {
   border-color: var(--topbar-fg);
   color: var(--topbar-fg);
 }
+/*
+ * 开启态（R / M）是强调色底 + 自动算出的对比色，
+ * 不能再被上面的顶栏前景色覆盖 —— 深色主题色时强调色会被提亮，
+ * 若仍然用顶栏的白字就会出现「浅底白字」。
+ */
+html.has-nav-color .topbar .top-btn.active,
+html.has-nav-color .topbar .top-btn.active:hover {
+  color: var(--accent-fg);
+}
 body {
   margin: 0;
   background: var(--bg);

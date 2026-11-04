@@ -95,12 +95,63 @@ function rgb(hex: string, toward: RGB, k: number): string {
   return `rgb(${m[0]}, ${m[1]}, ${m[2]})`
 }
 
-/** 依据背景亮度选择可读的对比色：浅底用深字、深底用浅字。 */
-function readableFg(hex: string): string {
+/** sRGB 分量按 WCAG 规则线性化。 */
+function linearChannel(v: number): number {
+  const s = v / 255
+  return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)
+}
+
+/** 相对亮度（WCAG 2.x，0-1）。 */
+function luminance(c: RGB): number {
+  return 0.2126 * linearChannel(c[0]) + 0.7152 * linearChannel(c[1]) + 0.0722 * linearChannel(c[2])
+}
+
+/** 两色的对比度（1:1 ~ 21:1）。 */
+function contrastRatio(a: RGB, b: RGB): number {
+  const la = luminance(a)
+  const lb = luminance(b)
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}
+
+/** 强调色作为前景时的最低对比度（WCAG AA 正文标准）。 */
+const MIN_FG_CONTRAST = 4.5
+/** 深色 UI 上选深色前景时用的颜色（与 :root 的 --accent-fg 兜底一致）。 */
+const FG_DARK: RGB = [11, 14, 18]
+
+/**
+ * 在给定底色上选择黑 / 白里对比度更高的前景色。
+ * 比「按亮度卡阈值」更可靠：中间调颜色不会两边都看不清。
+ */
+function foregroundOn(bg: RGB): string {
+  return contrastRatio([255, 255, 255], bg) >= contrastRatio(FG_DARK, bg) ? '#ffffff' : '#0b0e12'
+}
+
+/**
+ * 把主题色变成「可读的强调色」。
+ *
+ * 主题色不只用来铺底色，还会被当作文字 / 图标 / 边框 / 选中态（--accent）。
+ * 用户把它设成黑色、深蓝这类和深色面板几乎一样暗的颜色时，这些地方就会糊成一片。
+ * 这里不做固定配色，而是沿原色相逐步向白色混合（相当于把过暗的颜色往反方向提亮），
+ * 直到与该颜色自己的选中底色（面板 + 20% 强调色，即 --accent-soft）的对比度
+ * 达到 AA 正文标准；原本就够亮的颜色保持不变。
+ * 以选中底色为基准是因为侧边栏 / 管理页的选中项正是「强调色文字压在强调色淡底上」，
+ * 只对纯面板达标的话，那一层淡底还会再吃掉一点对比度。
+ */
+function readableAccent(hex: string): RGB | null {
   const c = hexToRgb(hex)
-  if (!c) return ''
-  const luminance = (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255
-  return luminance > 0.6 ? '#1b1f26' : '#ffffff'
+  if (!c) return null
+  const onSoft = (color: RGB) => contrastRatio(color, mixRgb(PANEL_BASE, color, 0.2))
+  if (onSoft(c) >= MIN_FG_CONTRAST) return c
+  for (let k = 0.05; k < 1; k += 0.05) {
+    const candidate = mixRgb(c, [255, 255, 255], k)
+    if (onSoft(candidate) >= MIN_FG_CONTRAST) return candidate
+  }
+  return [255, 255, 255]
+}
+
+/** RGB → #rrggbb。 */
+function toHex(c: RGB): string {
+  return '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')
 }
 
 /** 设置里的百分比 → alpha（0-1）。 */
@@ -208,17 +259,24 @@ export function useAppearance() {
     // ---- 主题色：导航栏 + 全站强调色（hover 框线 / 播放条 / 选中态…）----
     const nav = s.theme_color_nav
     const navRgb = nav ? hexToRgb(nav) : null
-    const navFg = navRgb ? readableFg(nav) : ''
+    const navFg = navRgb ? foregroundOn(navRgb) : ''
+    // 顶栏底色仍用用户挑的原始颜色（那是它本身的职责）。
+    // 前景色 / 边框 / 选中态用「按对比度处理过」的强调色：
+    // 主题色过暗时沿原色相提亮，避免黑底黑字；原本就够亮的颜色不受影响。
+    const accentRgb = nav ? readableAccent(nav) : null
+    const accent = accentRgb ? toHex(accentRgb) : ''
+    const accentFg = accentRgb ? foregroundOn(accentRgb) : ''
     // 顶栏也是一块面板：设了主题色时用「主题色 + 面板透明度」，滑杆才会对顶栏生效。
     // 没有壁纸时沿用固定的 NAV_ALPHA（与改动前的观感一致）。
     const topbarAlpha = wp ? pct(s.panel_opacity, DEFAULT_PANEL_OPACITY) : NAV_ALPHA
-    setVar('--accent', nav)
+    setVar('--accent', accent)
     setVar('--topbar-color', navRgb ? rgba(nav, topbarAlpha) : '')
     setVar('--topbar-fg', navFg)
-    // 强调色块（播放键等）上的前景色：深色主题色时自动转白，避免看不清
-    setVar('--accent-fg', navFg)
-    // 强调色的淡色叠加（选中态 / 正在播放等底色）
-    setVar('--accent-soft', navRgb ? rgba(nav, 0.2) : '')
+    // 强调色块（播放键等）上的前景色：按实际强调色的对比度自动取黑 / 白
+    setVar('--accent-fg', accentFg)
+    // 强调色的淡色叠加（选中态 / 正在播放等底色）也基于处理后的强调色，
+    // 否则深色主题色做出来的选中底色在深色面板上几乎看不见。
+    setVar('--accent-soft', accentRgb ? rgba(accent, 0.2) : '')
     // 顶栏上的半透明叠加（hover / 选中 / 头像底 / 描边）
     setVar('--topbar-hover', navFg ? rgba(navFg, 0.18) : '')
     setVar('--topbar-line', navFg ? rgba(navFg, 0.35) : '')
@@ -230,14 +288,14 @@ export function useAppearance() {
     // 作品卡片下半部分也由主题色决定
     setVar('--card-meta-bg', navRgb ? rgba(nav, CARD_META_ALPHA) : '')
 
-    // Element Plus 控件的 hover / focus 框线也跟着主题色走
-    setVar('--el-color-primary', nav)
-    setVar('--el-color-primary-light-3', navRgb ? rgb(nav, [255, 255, 255], 0.3) : '')
-    setVar('--el-color-primary-light-5', navRgb ? rgb(nav, [255, 255, 255], 0.5) : '')
-    setVar('--el-color-primary-light-7', navRgb ? rgb(nav, [255, 255, 255], 0.7) : '')
-    setVar('--el-color-primary-light-8', navRgb ? rgb(nav, [255, 255, 255], 0.8) : '')
-    setVar('--el-color-primary-light-9', navRgb ? rgb(nav, [255, 255, 255], 0.9) : '')
-    setVar('--el-color-primary-dark-2', navRgb ? rgb(nav, [0, 0, 0], 0.2) : '')
+    // Element Plus 控件的 hover / focus 框线也跟着强调色走（同样用处理后的可读色）
+    setVar('--el-color-primary', accent)
+    setVar('--el-color-primary-light-3', accentRgb ? rgb(accent, [255, 255, 255], 0.3) : '')
+    setVar('--el-color-primary-light-5', accentRgb ? rgb(accent, [255, 255, 255], 0.5) : '')
+    setVar('--el-color-primary-light-7', accentRgb ? rgb(accent, [255, 255, 255], 0.7) : '')
+    setVar('--el-color-primary-light-8', accentRgb ? rgb(accent, [255, 255, 255], 0.8) : '')
+    setVar('--el-color-primary-light-9', accentRgb ? rgb(accent, [255, 255, 255], 0.9) : '')
+    setVar('--el-color-primary-dark-2', accentRgb ? rgb(accent, [0, 0, 0], 0.2) : '')
 
     // ---- 声优 / 类型标签：独立配色 + 各自可调的不透明度 ----
     // 设置留空时也要下发内置默认色（且必须是带 alpha 的 rgba），
