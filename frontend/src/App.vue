@@ -347,6 +347,14 @@ html.image-only .work-card .meta {
   padding-bottom: 0;
 }
 /*
+ * 信息区收起后封面就是卡片最底部。封面原本只圆上面两个角（下面接信息区），
+ * 而卡片为了容纳外溢的销量火焰不能整卡 overflow: hidden，
+ * 于是封面的方角会从卡片底部圆角里伸出来。这里给封面补上底部圆角。
+ */
+html.image-only .work-card .cover {
+  border-radius: 9px;
+}
+/*
  * 控件（输入框 / 按钮 / 下拉）的底色由 useAppearance 覆盖 Element Plus 的
  * --el-fill-color-blank 统一给出（带壁纸时才覆盖），这里不再额外加模糊。
  */
