@@ -128,8 +128,63 @@ function onScroll() {
   }
 }
 
+/** 页面当前是否处于激活（keep-alive）状态；失活期间不做自动填充。 */
+const active = ref(false)
+
+/**
+ * 大屏幕上第一页可能整页都放得下：没有滚动条就永远不会派发 scroll 事件，
+ * 「加载更多」看起来就失效了（即使滚动鼠标也没有可滚动的距离）。
+ * 这里在每次渲染后主动检查：只要页面还撑不出滚动条、且还有更多数据，
+ * 就继续加载下一页，直到页面可滚动或数据取完。
+ *
+ * 串行加载并设页数上限，接口异常 / 数据不增长时立即停止，避免空转。
+ */
+let filling = false
+async function fillViewport() {
+  if (!active.value || filling) return
+  filling = true
+  try {
+    for (let i = 0; i < 50; i++) {
+      if (!active.value || store.randomMode || !store.loaded || !store.hasMore) return
+      /*
+       * 用 onScroll 的触发线作为判断：页面底部的滚动余量已经不足 300px 时，
+       * 用户滚到顶部就已经满足「接近列表底部」的条件，再怎么滚也触发不了新的加载
+       * （大屏幕上第一页常常整页放得下，滚动余量甚至是 0）。
+       * 这时继续补页，直到余量足够或数据取完。
+       * 把播放条预留的底部留白也算进去，避免几十像素的假滚动空间被当成「能滚」。
+       */
+      if (document.documentElement.scrollHeight - window.innerHeight > 300) return
+      const before = store.items.length
+      try {
+        await store.loadMore()
+      } catch {
+        return
+      }
+      await nextTick()
+      // 没拿到新数据（请求失败 / 并发保护提前返回）就停，避免死循环
+      if (store.items.length === before) return
+    }
+  } finally {
+    filling = false
+  }
+}
+
+function onResize() {
+  void fillViewport()
+}
+
+// 每次请求结束（筛选 / 排序 / 搜索 / 翻页）都检查一次页面是否需要填满
+watch(
+  () => store.loading,
+  (loading) => {
+    if (!loading) void fillViewport()
+  }
+)
+
 async function onActivate() {
+  active.value = true
   window.addEventListener('scroll', onScroll, { passive: true })
+  window.addEventListener('resize', onResize, { passive: true })
   // 从播放器返回：保留已加载列表与滚动位置（播放器不会改动库内容）。
   // 其他来源（管理功能、历史、收藏、设置等）返回：始终重新拉取，
   // 保证隐藏/取消隐藏等管理操作立即生效，不再显示旧数据。
@@ -138,15 +193,19 @@ async function onActivate() {
     window.scrollTo(0, store.scrollTop)
     await nextTick()
     window.scrollTo(0, store.scrollTop)
+    void fillViewport()
   } else {
     if (!store.loaded) store.applyPrefs(auth.user?.prefs)
     await store.fetch('replace')
+    void fillViewport()
   }
 }
 function onDeactivate() {
+  active.value = false
   store.rememberScroll(window.scrollY)
   store.flushPrefs()
   window.removeEventListener('scroll', onScroll)
+  window.removeEventListener('resize', onResize)
 }
 onActivated(onActivate)
 onDeactivated(onDeactivate)
