@@ -72,6 +72,32 @@
       <path d="M3 12h18" />
       <path d="M3 18h18" />
     </template>
+    <template v-else-if="name === 'chevron'">
+      <path d="m9 18 6-6-6-6" />
+    </template>
+    <template v-else-if="name === 'folder'">
+      <path
+        d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+      />
+    </template>
+    <template v-else-if="name === 'music'">
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </template>
+    <template v-else-if="name === 'video'">
+      <path d="m22 8-6 4 6 4V8Z" />
+      <rect x="2" y="6" width="14" height="12" rx="2" />
+    </template>
+    <template v-else-if="name === 'image'">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <path d="m21 15-5-5L5 21" />
+    </template>
+    <template v-else-if="name === 'file'">
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+      <path d="M14 2v5h5" />
+    </template>
   </svg>
 </template>
 

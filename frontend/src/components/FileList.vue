@@ -15,11 +15,16 @@
       "
     >
       <span class="kind">
-        <template v-if="f.is_dir === 1">{{ expanded.has(f.rel_path) ? '▾' : '▸' }}</template>
-        <template v-else>{{ icon(f.kind) }}</template>
+        <SidebarIcon
+          v-if="f.is_dir === 1"
+          name="chevron"
+          class="chevron"
+          :class="{ open: expanded.has(f.rel_path) }"
+        />
+        <SidebarIcon v-else :name="icon(f.kind)" />
       </span>
       <span class="name">
-        <span v-if="f.is_dir === 1" class="folder-icon">📁</span>{{ f.filename }}
+        <SidebarIcon v-if="f.is_dir === 1" name="folder" class="folder-icon" />{{ f.filename }}
       </span>
       <span v-if="f.is_dir !== 1" class="size">{{ formatSize(f.size) }}</span>
       <span v-if="f.is_dir !== 1 && actionLabel(f)" class="action">{{ actionLabel(f) }}</span>
@@ -32,6 +37,7 @@ import { reactive, computed } from 'vue'
 import type { MediaFile, Work } from '../api/types'
 import { usePlayerStore } from '../stores/player'
 import { useIsMobile } from '../composables/useIsMobile'
+import SidebarIcon from './SidebarIcon.vue'
 
 const props = defineProps<{ files: MediaFile[]; rj: string; work?: Work | null }>()
 const emit = defineEmits<{
@@ -66,8 +72,9 @@ function toggle(dir: string) {
   else expanded.add(dir)
 }
 
+/** 文件类型 → 线性图标名（与侧边栏图标同一套） */
 function icon(kind: string): string {
-  return { audio: '♪', video: '▶', image: '▣', other: '📄' }[kind] || '·'
+  return { audio: 'music', video: 'video', image: 'image', other: 'file' }[kind] || 'file'
 }
 
 function actionLabel(f: MediaFile): string {
@@ -174,9 +181,27 @@ function formatSize(n: number): string {
   text-align: center;
   flex-shrink: 0;
   color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.kind .sidebar-icon {
+  width: 16px;
+  height: 16px;
+}
+/* 展开箭头：默认向右，展开后转 90° 朝下 */
+.chevron {
+  transition: transform var(--anim-duration) ease;
+}
+.chevron.open {
+  transform: rotate(90deg);
 }
 .folder-icon {
+  width: 16px;
+  height: 16px;
   margin-right: 6px;
+  vertical-align: -3px;
+  color: var(--muted);
 }
 .name {
   flex: 1;
