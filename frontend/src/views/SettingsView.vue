@@ -173,7 +173,7 @@
           <div>面板模糊</div>
           <div class="hint">
             作品卡片、导航栏、侧栏、播放栏、设置卡片等大色块面板的亚克力毛玻璃强度。
-            0 表示关闭；无壁纸时只保留玻璃高光质感。
+            0 表示关闭；无壁纸时面板后方的内容同样会被模糊。
           </div>
         </div>
         <el-slider v-model="panelBlur" :min="0" :max="100" class="blur-slider" />
@@ -190,7 +190,7 @@
       <div class="setting-row">
         <div class="setting-label">
           <div>标签模糊</div>
-          <div class="hint">声优 / 类型标签的亚克力毛玻璃强度，与面板分开调节。无壁纸时只保留玻璃高光质感。</div>
+          <div class="hint">声优 / 类型标签的亚克力毛玻璃强度，与面板分开调节。</div>
         </div>
         <el-slider v-model="tagBlur" :min="0" :max="100" class="blur-slider" />
       </div>

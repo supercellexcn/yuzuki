@@ -43,6 +43,9 @@ const DEFAULT_ANIM_SECONDS = 0.25
 /** 不透明度设置项的默认值（百分比），与样式表兜底值、后端默认值保持一致。 */
 const DEFAULT_TAG_OPACITY = 62
 const DEFAULT_PANEL_OPACITY = 62
+/** 面板 / 标签模糊强度默认值（百分比），与后端默认值保持一致。 */
+const DEFAULT_PANEL_BLUR = 40
+const DEFAULT_TAG_BLUR = 30
 const DEFAULT_FILELIST_OPACITY = 62
 const DEFAULT_CONTROL_OPACITY = 70
 const CARD_META_ALPHA = 0.26
@@ -224,7 +227,7 @@ export function useAppearance() {
     if (!s) return
 
     // ---- 壁纸 ----
-    // 先算出壁纸 URL：下面「底色透明度」是否生效取决于有没有壁纸。
+    // 先算出壁纸 URL：没有壁纸时面板透出的是页面底色。
     const wallUrl =
       hasCurrentWallpaper.value && currentWallpaperEnabled.value && getToken()
         ? wallpaperUrl(currentKind.value, wallpaperVersion.value || undefined)
@@ -237,21 +240,20 @@ export function useAppearance() {
     root.style.setProperty('--wallpaper-blur', `${Math.round(wallpaperBlur * 0.3)}px`)
 
     // ---- 底色不透明度：面板 / 文件列表 / 控件 ----
-    // 面板与文件列表没有壁纸时不生效（保持不透明）：半透明面板盖在纯色背景上会糊成一片、失去层次。
-    // 控件（输入框 / 按钮 / 标签底色）始终生效 —— 它们盖在卡片和面板上，本来就不依赖壁纸。
-    const wp = Boolean(wallUrl)
-    // 亚克力质感（高光渐变）只要有强度就启用；真正的 backdrop-filter 模糊只在有壁纸时
-    // 才需要（纯色背景上模糊不可见，却要白建合成层），由 CSS 的 .has-wallpaper 控制。
-    const panelBlur = Math.round(Math.max(0, Math.min(100, s.panel_blur)) * 0.2)
-    const tagBlur = Math.round(Math.max(0, Math.min(100, s.tag_blur)) * 0.2)
+    // 不透明度始终生效：有壁纸时透出壁纸，没有壁纸时透出页面底色。
+    // 亚克力毛玻璃同样不依赖壁纸：没有壁纸时，滚动到面板后面的内容也会被模糊。
+    const panelBlur = Math.round(
+      Math.max(0, Math.min(100, Number.isFinite(Number(s.panel_blur)) ? Number(s.panel_blur) : DEFAULT_PANEL_BLUR)) * 0.2
+    )
+    const tagBlur = Math.round(
+      Math.max(0, Math.min(100, Number.isFinite(Number(s.tag_blur)) ? Number(s.tag_blur) : DEFAULT_TAG_BLUR)) * 0.2
+    )
     root.style.setProperty('--panel-blur', `${panelBlur}px`)
     root.style.setProperty('--tag-blur', `${tagBlur}px`)
-    root.classList.toggle('has-wallpaper', wp)
     root.classList.toggle('has-acrylic', panelBlur > 0)
     root.classList.toggle('has-tag-acrylic', tagBlur > 0)
-    // 没有壁纸时 backdrop-filter 模糊不可见，直接 none（高光质感仍由 .has-acrylic 提供）
-    setVar('--acrylic-filter', wp ? `blur(${panelBlur}px) saturate(1.7)` : 'none')
-    setVar('--tag-acrylic-filter', wp ? `blur(${tagBlur}px) saturate(1.8)` : 'none')
+    setVar('--acrylic-filter', `blur(${panelBlur}px) saturate(1.7)`)
+    setVar('--tag-acrylic-filter', `blur(${tagBlur}px) saturate(1.8)`)
     // 不透明度始终生效：有壁纸时透出壁纸，没壁纸时透出页面底色，不能因为没壁纸就把效果整个拿掉
     root.style.setProperty('--panel-alpha', String(pct(s.panel_opacity, DEFAULT_PANEL_OPACITY)))
     root.style.setProperty(

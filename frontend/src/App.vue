@@ -338,9 +338,9 @@ function scrollToTop() {
 /* ---- 亚克力毛玻璃 ---- */
 /*
  * 面板：作品卡片、导航栏、侧栏、底部播放栏、移动圆盘、全屏播放器、详情信息区、
- * 设置卡片、登录卡、文件列表等大色块。只在「有壁纸且面板模糊 > 0」时由
- * useAppearance 给 <html> 加 .has-acrylic —— 0 强度也会建合成层，纯色背景上毫无意义。
- * 高光渐变是亚克力的关键：极淡的斜向反光让玻璃有厚度，而不是一片均色。
+ * 设置卡片、登录卡、文件列表等大色块。面板模糊 > 0 时由 useAppearance 给 <html>
+ * 加 .has-acrylic（0 强度不启用，省合成层）。没有壁纸时，滚动到面板后面的内容
+ * 同样会被 backdrop-filter 模糊。高光渐变让玻璃有厚度，而不是一片均色。
  */
 html.has-acrylic .topbar,
 html.has-acrylic .sidebar,
