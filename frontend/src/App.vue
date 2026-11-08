@@ -730,8 +730,8 @@ body {
   .topbar {
     flex-wrap: nowrap;
     gap: 6px;
-    padding: 6px 8px;
-    min-height: 48px;
+    padding: 8px 10px;
+    min-height: 56px;
   }
   .topbar.has-controls .spacer {
     display: none;
@@ -739,7 +739,7 @@ body {
   .topbar-controls {
     order: 0;
     flex: 1 1 auto;
-    height: 34px;
+    height: 38px;
     border-radius: 9px;
   }
   .topbar-controls .el-input__wrapper {
@@ -760,8 +760,8 @@ body {
     font-size: 12px;
   }
   .top-btn {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     font-size: 13px;
   }
   .app.mobile-sidebar-open .sidebar {
