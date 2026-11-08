@@ -178,7 +178,10 @@ watch(
   () => store.loading,
   (loading) => {
     if (!loading) void fillViewport()
-  }
+  },
+  // 必须等列表重新渲染后再检查滚动余量：默认的 pre 时机会读到上一份列表的旧布局，
+  // 清空搜索等「替换列表」场景下会被旧布局误导而提前 return，导致只加载一屏。
+  { flush: 'post' }
 )
 
 async function onActivate() {
