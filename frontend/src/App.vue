@@ -59,14 +59,46 @@
                 {{ o.label }}
               </button>
             </div>
-            <!-- 升降序：一个文字按钮，点击在「升 / 降」之间切换 -->
+            <!-- 升降序：图标按钮，点击在升序 / 降序之间切换 -->
             <button
               class="order-toggle"
               type="button"
               :title="library.order === 'desc' ? '当前降序，点击切换为升序' : '当前升序，点击切换为降序'"
+              :aria-label="library.order === 'desc' ? '降序' : '升序'"
               @click="library.toggleOrder()"
             >
-              {{ library.order === 'desc' ? '降' : '升' }}
+              <svg
+                v-if="library.order === 'desc'"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m3 16 4 4 4-4" />
+                <path d="M7 20V4" />
+                <path d="M11 4h10" />
+                <path d="M11 8h7" />
+                <path d="M11 12h4" />
+              </svg>
+              <svg
+                v-else
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m3 8 4-4 4 4" />
+                <path d="M7 4v16" />
+                <path d="M11 12h4" />
+                <path d="M11 16h7" />
+                <path d="M11 20h10" />
+              </svg>
             </button>
           </div>
         </div>
@@ -198,14 +230,13 @@ watch(mobileSidebarOpen, (v) => {
   document.documentElement.classList.toggle('drawer-open', v && isMobile.value)
 })
 
-/** 作品数量放进搜索框占位符，顶栏不再单独占一行显示数量。 */
+/** 作品数量直接写进搜索框占位符，顶栏不再单独显示数量。 */
 const searchPlaceholder = computed(() => {
-  const count = library.randomMode
-    ? `随机推荐 ${library.randomItems.length} 个`
-    : `共 ${library.total} 个作品`
-  // 移动端搜索框很窄，去掉空格并缩小字号，保证数量能完整显示
-  if (isMobile.value) return count.replace(/\s/g, '')
-  return `${count} · 搜索标题 / RJ号 / 声优 / 标签…`
+  const text = library.randomMode
+    ? `在 ${library.randomItems.length} 个随机推荐中搜索`
+    : `在 ${library.total} 个作品中搜索`
+  // 移动端搜索框很窄，去掉空格，保证占位文字能完整显示
+  return isMobile.value ? text.replace(/\s/g, '') : text
 })
 
 /**
@@ -456,19 +487,20 @@ body {
   align-items: center;
   justify-content: center;
 }
-/* 搜索栏 + 排序控件合并成一条紧凑控件（参考图：一整条，内部分段） */
+/* 搜索与排序是两个独立胶囊（参考图：中间留缝） */
 .topbar-controls {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 10px;
   flex: 1 1 520px;
   max-width: 640px;
   min-width: 0;
   height: 38px;
-  background: var(--control-bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
+  background: transparent;
+  border: none;
+  overflow: visible;
 }
+/* 搜索胶囊 */
 .topbar .topbar-controls .searchbar {
   flex: 1 1 auto;
   width: auto;
@@ -476,13 +508,20 @@ body {
   max-width: none;
   height: 100%;
   display: flex;
+  align-items: center;
+  padding: 0 16px;
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
 }
 .topbar-controls .el-input {
+  width: 100%;
   height: 100%;
 }
 .topbar-controls .el-input__wrapper {
   height: 100%;
-  padding: 0 12px;
+  padding: 0;
   background: transparent;
   border-radius: 0;
   box-shadow: none !important;
@@ -490,33 +529,35 @@ body {
 .topbar-controls .el-input__inner {
   height: 100%;
 }
-/* 搜索与排序之间的分界线：明显一些 */
+/* 排序胶囊：入库 / 发售 / 销量 + 升降序图标 */
 .sort-ctrl {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 2px;
   flex-shrink: 0;
-  border-left: 1px solid rgba(232, 235, 240, 0.5);
+  height: 100%;
+  padding: 0 5px;
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
 }
 .sort-ctrl .sort-tabs {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 2px;
   height: 100%;
 }
 .sort-tab {
-  height: 100%;
-  padding: 0 12px;
+  height: 30px;
+  padding: 0 14px;
   border: none;
-  border-radius: 0;
+  border-radius: 999px;
   background: transparent;
   color: var(--text);
   font-family: inherit;
   font-size: 14px;
   cursor: pointer;
   transition: background var(--anim-duration), color var(--anim-duration);
-}
-/* 入库 / 发售 / 销量之间的分隔线：浅一些 */
-.sort-tab + .sort-tab {
-  border-left: 1px solid rgba(232, 235, 240, 0.12);
 }
 .sort-tab:hover {
   background: rgba(255, 255, 255, 0.08);
@@ -526,20 +567,26 @@ body {
   color: var(--accent-fg);
   font-weight: 600;
 }
-/* 升降序：文字按钮，点击在「升 / 降」之间切换 */
+/* 升降序：图标按钮，与指标之间留出更大的间距 */
 .order-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  height: 100%;
-  padding: 0 14px;
+  width: 30px;
+  height: 30px;
+  margin-left: 8px;
+  padding: 0;
   border: none;
-  border-left: 1px solid rgba(232, 235, 240, 0.12);
+  border-radius: 999px;
   background: transparent;
   color: var(--text);
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
   cursor: pointer;
   transition: background var(--anim-duration), color var(--anim-duration);
+}
+.order-toggle svg {
+  width: 18px;
+  height: 18px;
 }
 .order-toggle:hover {
   background: var(--accent-soft);
@@ -752,25 +799,28 @@ body {
   .topbar-controls {
     order: 0;
     flex: 1 1 auto;
+    gap: 6px;
     height: 38px;
-    border-radius: 9px;
   }
-  .topbar-controls .el-input__wrapper {
-    padding: 0 8px;
+  .topbar .topbar-controls .searchbar {
+    padding: 0 10px;
   }
   .topbar-controls .el-input__inner {
     font-size: 12px;
   }
-  .topbar-controls .el-input__prefix {
-    display: none;
-  }
   .sort-tab {
-    padding: 0 6px;
+    height: 28px;
+    padding: 0 7px;
     font-size: 12px;
   }
   .order-toggle {
-    padding: 0 7px;
-    font-size: 12px;
+    width: 26px;
+    height: 26px;
+    margin-left: 4px;
+  }
+  .order-toggle svg {
+    width: 16px;
+    height: 16px;
   }
   .top-btn {
     width: 32px;

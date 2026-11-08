@@ -11,11 +11,7 @@
       @change="onBlur"
       @blur="onBlur"
       @compositionend="onCompositionEnd"
-    >
-      <template #prefix>
-        <span class="icon">⌕</span>
-      </template>
-    </el-input>
+    />
   </div>
 </template>
 
@@ -166,8 +162,5 @@ onBeforeUnmount(() => {
 .searchbar {
   max-width: 560px;
   width: 100%;
-}
-.icon {
-  color: var(--muted);
 }
 </style>
