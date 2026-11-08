@@ -14,10 +14,11 @@ import { useIsMobile } from './useIsMobile'
  * 两个要点：
  * 1) 主题色一律以「带 alpha 的 rgba」下发（在 JS 里算好），不用 CSS 的 color-mix ——
  *    兼容性更好，且半透明才能让壁纸透出来。
- * 2) 全站只有壁纸做模糊：面板 / 文件列表 / 控件都不加 backdrop-filter（壁纸已整层糊过，
- *    再叠一层看不出差别却要给每个元素建合成层，媒体库几千张卡片时就是几万个），
- *    它们只受「底色不透明度」控制。主题色统一驱动 hover 框线、播放条、面板底色等；
- *    只有「声优标签」和「作品类型标签」是独立配色 + 独立透明度。
+ * 2) 模糊分三层：壁纸（filter: blur）、面板（backdrop-filter，作用于卡片 / 导航栏 /
+ *    侧栏 / 播放栏 / 设置卡片等大色块）、标签（backdrop-filter，独立强度）。
+ *    亚克力高光质感只要有强度就启用；backdrop-filter 只在有壁纸时才加，避免纯色
+ *    背景上白付合成层代价。主题色统一驱动 hover 框线、播放条、面板底色等；
+ *    声优标签与作品类型标签是独立配色 + 独立透明度。
  */
 
 type RGB = [number, number, number]
@@ -39,11 +40,12 @@ const TAG_FG = '#ffffff'
 /** 全局动画时长默认值（秒），与样式表兜底值、后端默认值保持一致。 */
 const DEFAULT_ANIM_SECONDS = 0.25
 
-/** 各类颜色的不透明度：导航栏留一点透，标签透得更明显。 */
-const NAV_ALPHA = 0.75
 /** 不透明度设置项的默认值（百分比），与样式表兜底值、后端默认值保持一致。 */
 const DEFAULT_TAG_OPACITY = 62
 const DEFAULT_PANEL_OPACITY = 62
+/** 面板 / 标签模糊强度默认值（百分比），与后端默认值保持一致。 */
+const DEFAULT_PANEL_BLUR = 40
+const DEFAULT_TAG_BLUR = 30
 const DEFAULT_FILELIST_OPACITY = 62
 const DEFAULT_CONTROL_OPACITY = 70
 const CARD_META_ALPHA = 0.26
@@ -55,6 +57,8 @@ const hasWallpaperMobile = ref(false)
 const wallpaperEnabledPreview = ref<Partial<Record<WallpaperKind, boolean>>>({})
 /** 上传 / 删除壁纸后自增，用于给图片 URL 破缓存 */
 const wallpaperVersion = ref(0)
+/** 设置页拖动「壁纸模糊」时的即时预览值（保存前就让页面响应） */
+const wallpaperBlurPreview = ref<number | null>(null)
 
 let wired = false
 
@@ -223,29 +227,43 @@ export function useAppearance() {
     if (!s) return
 
     // ---- 壁纸 ----
-    // 先算出壁纸 URL：下面「底色透明度」是否生效取决于有没有壁纸。
+    // 先算出壁纸 URL：没有壁纸时面板透出的是页面底色。
     const wallUrl =
       hasCurrentWallpaper.value && currentWallpaperEnabled.value && getToken()
         ? wallpaperUrl(currentKind.value, wallpaperVersion.value || undefined)
         : ''
     root.style.setProperty('--wallpaper-image', wallUrl ? `url("${wallUrl}")` : 'none')
 
-    // ---- 模糊：只作用于壁纸本身（其余表面的 backdrop-filter 已全部移除）----
-    root.style.setProperty('--wallpaper-blur', `${Math.round(s.wallpaper_blur * 0.3)}px`)
+    // ---- 模糊：壁纸 / 面板 / 标签三层独立 ----
+    const wallpaperBlur =
+      wallpaperBlurPreview.value !== null ? wallpaperBlurPreview.value : s.wallpaper_blur
+    root.style.setProperty('--wallpaper-blur', `${Math.round(wallpaperBlur * 0.3)}px`)
 
     // ---- 底色不透明度：面板 / 文件列表 / 控件 ----
-    // 面板与文件列表没有壁纸时不生效（保持不透明）：半透明面板盖在纯色背景上会糊成一片、失去层次。
-    // 控件（输入框 / 按钮 / 标签底色）始终生效 —— 它们盖在卡片和面板上，本来就不依赖壁纸。
-    const wp = Boolean(wallUrl)
-    root.style.setProperty('--panel-alpha', String(wp ? pct(s.panel_opacity, DEFAULT_PANEL_OPACITY) : 1))
+    // 不透明度始终生效：有壁纸时透出壁纸，没有壁纸时透出页面底色。
+    // 亚克力毛玻璃同样不依赖壁纸：没有壁纸时，滚动到面板后面的内容也会被模糊。
+    const panelBlur = Math.round(
+      Math.max(0, Math.min(100, Number.isFinite(Number(s.panel_blur)) ? Number(s.panel_blur) : DEFAULT_PANEL_BLUR)) * 0.2
+    )
+    const tagBlur = Math.round(
+      Math.max(0, Math.min(100, Number.isFinite(Number(s.tag_blur)) ? Number(s.tag_blur) : DEFAULT_TAG_BLUR)) * 0.2
+    )
+    root.style.setProperty('--panel-blur', `${panelBlur}px`)
+    root.style.setProperty('--tag-blur', `${tagBlur}px`)
+    root.classList.toggle('has-acrylic', panelBlur > 0)
+    root.classList.toggle('has-tag-acrylic', tagBlur > 0)
+    setVar('--acrylic-filter', `blur(${panelBlur}px) saturate(1.7)`)
+    setVar('--tag-acrylic-filter', `blur(${tagBlur}px) saturate(1.8)`)
+    // 不透明度始终生效：有壁纸时透出壁纸，没壁纸时透出页面底色，不能因为没壁纸就把效果整个拿掉
+    root.style.setProperty('--panel-alpha', String(pct(s.panel_opacity, DEFAULT_PANEL_OPACITY)))
     root.style.setProperty(
       '--filelist-alpha',
-      String(wp ? pct(s.filelist_opacity, DEFAULT_FILELIST_OPACITY) : 1)
+      String(pct(s.filelist_opacity, DEFAULT_FILELIST_OPACITY))
     )
     const controlAlpha = pct(s.control_opacity, DEFAULT_CONTROL_OPACITY)
     root.style.setProperty('--control-alpha', String(controlAlpha))
-    // 输入框等控件的底色走 Element Plus 的统一变量（半透明白）；没壁纸时移除覆盖，保持原观感
-    setVar('--el-fill-color-blank', wp ? `rgba(255, 255, 255, ${controlAlpha})` : '')
+    // 输入框等控件的底色走 Element Plus 的统一变量（半透明白）
+    setVar('--el-fill-color-blank', `rgba(255, 255, 255, ${controlAlpha})`)
 
     const width = s.card_size === 'custom' ? s.card_width : CARD_MIN_WIDTH[s.card_size]
     root.style.setProperty('--card-min-width', `${width}px`)
@@ -266,9 +284,9 @@ export function useAppearance() {
     const accentRgb = nav ? readableAccent(nav) : null
     const accent = accentRgb ? toHex(accentRgb) : ''
     const accentFg = accentRgb ? foregroundOn(accentRgb) : ''
-    // 顶栏也是一块面板：设了主题色时用「主题色 + 面板透明度」，滑杆才会对顶栏生效。
-    // 没有壁纸时沿用固定的 NAV_ALPHA（与改动前的观感一致）。
-    const topbarAlpha = wp ? pct(s.panel_opacity, DEFAULT_PANEL_OPACITY) : NAV_ALPHA
+    // 顶栏也是一块面板：设了主题色时用「主题色 + 面板透明度」，滑杆始终对顶栏生效
+    // （没有壁纸时透出的是页面底色）。
+    const topbarAlpha = pct(s.panel_opacity, DEFAULT_PANEL_OPACITY)
     setVar('--accent', accent)
     setVar('--topbar-color', navRgb ? rgba(nav, topbarAlpha) : '')
     setVar('--topbar-fg', navFg)
@@ -341,6 +359,17 @@ export function useAppearance() {
     apply()
   }
 
+  /** 设置页拖动「壁纸模糊」时的即时预览（壁纸相关设置要求立即生效）。 */
+  function previewWallpaperBlur(value: number): void {
+    wallpaperBlurPreview.value = value
+    apply()
+  }
+
+  /** 撤掉壁纸模糊预览（保存 / 取消 / 离开设置页时调用）。 */
+  function clearWallpaperBlurPreview(): void {
+    wallpaperBlurPreview.value = null
+  }
+
   if (!wired) {
     wired = true
     let wallpapersChecked = false
@@ -379,5 +408,7 @@ export function useAppearance() {
     bumpWallpaperVersion,
     previewWallpaperEnabled,
     clearWallpaperEnabledPreview,
+    previewWallpaperBlur,
+    clearWallpaperBlurPreview,
   }
 }

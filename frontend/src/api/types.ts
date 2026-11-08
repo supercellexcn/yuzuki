@@ -113,8 +113,12 @@ export interface AppSettings {
   /** 桌面端 / 移动端壁纸是否启用；停用后文件保留但不应用。 */
   wallpaper_desktop_enabled: boolean
   wallpaper_mobile_enabled: boolean
-  /** 壁纸本身的模糊强度（0-100）。全站只有壁纸做模糊，其余表面只调不透明度。 */
+  /** 壁纸本身的模糊强度（0-100）。 */
   wallpaper_blur: number
+  /** 面板（卡片 / 导航栏 / 侧栏 / 播放栏 / 设置卡片）亚克力模糊强度（0-100）。有壁纸时才生效 */
+  panel_blur: number
+  /** 声优 / 类型标签的亚克力模糊强度（0-100）。有壁纸时才生效 */
+  tag_blur: number
   /** 面板（顶部栏 / 详情页信息区 / 播放器 / 设置卡片）底色不透明度（0-100）。有壁纸时才生效 */
   panel_opacity: number
   /** 作品详情页文件列表底色不透明度（0-100）。有壁纸时才生效 */

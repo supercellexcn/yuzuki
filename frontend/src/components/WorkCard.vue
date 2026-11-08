@@ -200,10 +200,11 @@ function onSeriesClick(e: MouseEvent) {
   display: flex;
   flex-direction: column;
   /*
-   * 卡片本身不做磨砂（全站尺度上都不做，见 App.vue 的 --filelist-alpha 注释）。
-   * 除性能外还有一个具体原因：backdrop-filter 会强制每张卡片单独成为一个合成层，
-   * 与 overflow:hidden + border-radius 的裁剪叠加后，离屏卡片在切换图片模式（整体布局变化）
-   * 后滚动进视野时容易出现「没有圆角 / 封面图不显示」的残影，需要再点一下才重绘。
+   * 卡片的亚克力磨砂由 App.vue 的 .has-acrylic 统一开启（仅在有壁纸且面板模糊 > 0 时）。
+   * 注意：backdrop-filter 会强制每张卡片单独成为一个合成层；与 overflow:hidden +
+   * border-radius 的裁剪叠加后，离屏卡片在切换图片模式（整体布局变化）后滚动进视野时
+   * 曾出现过「没有圆角 / 封面图不显示」的残影。因此该效果默认强度适中，
+   * 用户把「面板模糊」调到 0 即可完全关闭。
    */
 }
 .work-card:hover {

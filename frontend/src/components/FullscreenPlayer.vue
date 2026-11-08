@@ -357,19 +357,13 @@ function fmt(t: number): string {
   filter: blur(var(--wallpaper-blur));
   pointer-events: none;
 }
-/* 顶/底压暗一层，保证标题与控件文字可读，中间留给封面 */
+/* 整屏蒙版：底色与模糊都由「面板透明度 / 面板模糊」控制，壁纸不会直接透出来 */
 .fs-scrim {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background-image: linear-gradient(
-    180deg,
-    rgba(0, 0, 0, 0.45),
-    rgba(0, 0, 0, 0) 22%,
-    rgba(0, 0, 0, 0) 58%,
-    rgba(0, 0, 0, 0.5)
-  );
+  background: var(--panel);
 }
 .fs-player.closing {
   transform: translateY(100vh);

@@ -294,14 +294,18 @@ function scrollToTop() {
   /* ---- 外观变量（由 composables/useAppearance.ts 按设置覆盖）---- */
   --wallpaper-image: none;
   --wallpaper-blur: 6px;
+  /* 面板 / 标签的亚克力模糊：由 useAppearance 按设置覆盖；0 时不会启用 backdrop-filter */
+  --panel-blur: 0px;
+  --tag-blur: 0px;
+  /* 实际的 backdrop-filter 只在有壁纸时由 useAppearance 下发；none 表示不加合成层 */
+  --acrylic-filter: none;
+  --tag-acrylic-filter: none;
   --card-min-width: 180px;
   /*
-   * 各表面底色的不透明度。全站只有「壁纸」做模糊（--wallpaper-blur）：
-   * 壁纸已经整层糊过，面板/标签再叠一层 backdrop-filter 几乎看不出差别，
-   * 却要给每个元素建一个合成层（媒体库几千张卡片时就是几万个），代价远大于收益。
-   * 所以这些表面只调「底色透多少」。
-   * 有壁纸时由 useAppearance 按设置覆盖；没有壁纸时面板保持不透明，
-   * 否则半透明面板盖在纯色背景上会糊成一片、失去层次。
+   * 各表面底色的不透明度。模糊由三层独立控制：壁纸（--wallpaper-blur）、
+   * 面板（--panel-blur）、标签（--tag-blur）。有壁纸时由 useAppearance 按设置覆盖；
+   * 没有壁纸时面板保持不透明、且不启用 backdrop-filter，否则半透明面板盖在纯色
+   * 背景上会糊成一片、失去层次，还要白付合成层代价。
    */
   --filelist-alpha: 1;
   --control-rgb: 38, 43, 51;
@@ -330,6 +334,50 @@ function scrollToTop() {
 /* 控件圆角：由 Element Plus 默认的 4px 放大（提高特异性以覆盖其 :root 定义） */
 :root:root {
   --el-border-radius-base: 12px;
+}
+/* ---- 亚克力毛玻璃 ---- */
+/*
+ * 面板：作品卡片、导航栏、侧栏、底部播放栏、移动圆盘、全屏播放器、详情信息区、
+ * 设置卡片、登录卡、文件列表等大色块。面板模糊 > 0 时由 useAppearance 给 <html>
+ * 加 .has-acrylic（0 强度不启用，省合成层）。没有壁纸时，滚动到面板后面的内容
+ * 同样会被 backdrop-filter 模糊。高光渐变让玻璃有厚度，而不是一片均色。
+ */
+html.has-acrylic .topbar,
+html.has-acrylic .sidebar,
+html.has-acrylic .sidebar-user-menu,
+html.has-acrylic .bottom-player,
+html.has-acrylic .mobile-dock,
+html.has-acrylic .work-card,
+html.has-acrylic .pl-panel,
+html.has-acrylic .header,
+/* 系统设置里的子卡片是透明分隔行，叠加 backdrop-filter 会在壁纸上透出一块色斑 */
+html.has-acrylic .card:not(.sub-card),
+html.has-acrylic .login-card,
+html.has-acrylic .file-list,
+html.has-acrylic .save-toast,
+html.has-acrylic .back-btn {
+  -webkit-backdrop-filter: var(--acrylic-filter);
+  backdrop-filter: var(--acrylic-filter);
+  background-image: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.07),
+    rgba(255, 255, 255, 0) 45%,
+    rgba(255, 255, 255, 0.03)
+  );
+}
+/* 全屏播放器的整屏蒙版：底色不透明度跟随面板透明度，模糊跟随面板模糊 */
+html.has-acrylic .fs-scrim {
+  -webkit-backdrop-filter: var(--acrylic-filter);
+  backdrop-filter: var(--acrylic-filter);
+}
+/* 标签：与面板分开控制强度，模糊更轻、饱和度更高，保持小尺寸文字的清晰度 */
+html.has-tag-acrylic .cover-tag,
+html.has-tag-acrylic .chip-actor,
+html.has-tag-acrylic .fs-chip,
+html.has-tag-acrylic .el-tag.tag-actor,
+html.has-tag-acrylic .el-tag.tag-genre {
+  -webkit-backdrop-filter: var(--tag-acrylic-filter);
+  backdrop-filter: var(--tag-acrylic-filter);
 }
 * {
   box-sizing: border-box;

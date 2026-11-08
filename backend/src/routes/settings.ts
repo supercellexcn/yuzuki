@@ -60,6 +60,8 @@ settingsRouter.put('/', (req, res) => {
       wallpaper_desktop_enabled: body.wallpaper_desktop_enabled as boolean | undefined,
       wallpaper_mobile_enabled: body.wallpaper_mobile_enabled as boolean | undefined,
       wallpaper_blur: body.wallpaper_blur as number | undefined,
+      panel_blur: body.panel_blur as number | undefined,
+      tag_blur: body.tag_blur as number | undefined,
       panel_opacity: body.panel_opacity as number | undefined,
       filelist_opacity: body.filelist_opacity as number | undefined,
       control_opacity: body.control_opacity as number | undefined,
