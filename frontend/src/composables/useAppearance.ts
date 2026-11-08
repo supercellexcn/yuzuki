@@ -16,9 +16,9 @@ import { useIsMobile } from './useIsMobile'
  *    兼容性更好，且半透明才能让壁纸透出来。
  * 2) 模糊分三层：壁纸（filter: blur）、面板（backdrop-filter，作用于卡片 / 导航栏 /
  *    侧栏 / 播放栏 / 设置卡片等大色块）、标签（backdrop-filter，独立强度）。
- *    面板与标签仅在「有壁纸且模糊强度 > 0」时启用，避免纯色背景上白付合成层代价。
- *    主题色统一驱动 hover 框线、播放条、面板底色等；声优标签与作品类型标签是
- *    独立配色 + 独立透明度。
+ *    亚克力高光质感只要有强度就启用；backdrop-filter 只在有壁纸时才加，避免纯色
+ *    背景上白付合成层代价。主题色统一驱动 hover 框线、播放条、面板底色等；
+ *    声优标签与作品类型标签是独立配色 + 独立透明度。
  */
 
 type RGB = [number, number, number]
@@ -40,8 +40,6 @@ const TAG_FG = '#ffffff'
 /** 全局动画时长默认值（秒），与样式表兜底值、后端默认值保持一致。 */
 const DEFAULT_ANIM_SECONDS = 0.25
 
-/** 各类颜色的不透明度：导航栏留一点透，标签透得更明显。 */
-const NAV_ALPHA = 0.75
 /** 不透明度设置项的默认值（百分比），与样式表兜底值、后端默认值保持一致。 */
 const DEFAULT_TAG_OPACITY = 62
 const DEFAULT_PANEL_OPACITY = 62
@@ -242,22 +240,28 @@ export function useAppearance() {
     // 面板与文件列表没有壁纸时不生效（保持不透明）：半透明面板盖在纯色背景上会糊成一片、失去层次。
     // 控件（输入框 / 按钮 / 标签底色）始终生效 —— 它们盖在卡片和面板上，本来就不依赖壁纸。
     const wp = Boolean(wallUrl)
-    const panelBlur = wp ? Math.round(Math.max(0, Math.min(100, s.panel_blur)) * 0.2) : 0
-    const tagBlur = wp ? Math.round(Math.max(0, Math.min(100, s.tag_blur)) * 0.2) : 0
+    // 亚克力质感（高光渐变）只要有强度就启用；真正的 backdrop-filter 模糊只在有壁纸时
+    // 才需要（纯色背景上模糊不可见，却要白建合成层），由 CSS 的 .has-wallpaper 控制。
+    const panelBlur = Math.round(Math.max(0, Math.min(100, s.panel_blur)) * 0.2)
+    const tagBlur = Math.round(Math.max(0, Math.min(100, s.tag_blur)) * 0.2)
     root.style.setProperty('--panel-blur', `${panelBlur}px`)
     root.style.setProperty('--tag-blur', `${tagBlur}px`)
-    // 只有真正需要时才启用 backdrop-filter（0px 也会建合成层，纯色背景上纯属浪费）
+    root.classList.toggle('has-wallpaper', wp)
     root.classList.toggle('has-acrylic', panelBlur > 0)
     root.classList.toggle('has-tag-acrylic', tagBlur > 0)
-    root.style.setProperty('--panel-alpha', String(wp ? pct(s.panel_opacity, DEFAULT_PANEL_OPACITY) : 1))
+    // 没有壁纸时 backdrop-filter 模糊不可见，直接 none（高光质感仍由 .has-acrylic 提供）
+    setVar('--acrylic-filter', wp ? `blur(${panelBlur}px) saturate(1.7)` : 'none')
+    setVar('--tag-acrylic-filter', wp ? `blur(${tagBlur}px) saturate(1.8)` : 'none')
+    // 不透明度始终生效：有壁纸时透出壁纸，没壁纸时透出页面底色，不能因为没壁纸就把效果整个拿掉
+    root.style.setProperty('--panel-alpha', String(pct(s.panel_opacity, DEFAULT_PANEL_OPACITY)))
     root.style.setProperty(
       '--filelist-alpha',
-      String(wp ? pct(s.filelist_opacity, DEFAULT_FILELIST_OPACITY) : 1)
+      String(pct(s.filelist_opacity, DEFAULT_FILELIST_OPACITY))
     )
     const controlAlpha = pct(s.control_opacity, DEFAULT_CONTROL_OPACITY)
     root.style.setProperty('--control-alpha', String(controlAlpha))
-    // 输入框等控件的底色走 Element Plus 的统一变量（半透明白）；没壁纸时移除覆盖，保持原观感
-    setVar('--el-fill-color-blank', wp ? `rgba(255, 255, 255, ${controlAlpha})` : '')
+    // 输入框等控件的底色走 Element Plus 的统一变量（半透明白）
+    setVar('--el-fill-color-blank', `rgba(255, 255, 255, ${controlAlpha})`)
 
     const width = s.card_size === 'custom' ? s.card_width : CARD_MIN_WIDTH[s.card_size]
     root.style.setProperty('--card-min-width', `${width}px`)
@@ -278,9 +282,9 @@ export function useAppearance() {
     const accentRgb = nav ? readableAccent(nav) : null
     const accent = accentRgb ? toHex(accentRgb) : ''
     const accentFg = accentRgb ? foregroundOn(accentRgb) : ''
-    // 顶栏也是一块面板：设了主题色时用「主题色 + 面板透明度」，滑杆才会对顶栏生效。
-    // 没有壁纸时沿用固定的 NAV_ALPHA（与改动前的观感一致）。
-    const topbarAlpha = wp ? pct(s.panel_opacity, DEFAULT_PANEL_OPACITY) : NAV_ALPHA
+    // 顶栏也是一块面板：设了主题色时用「主题色 + 面板透明度」，滑杆始终对顶栏生效
+    // （没有壁纸时透出的是页面底色）。
+    const topbarAlpha = pct(s.panel_opacity, DEFAULT_PANEL_OPACITY)
     setVar('--accent', accent)
     setVar('--topbar-color', navRgb ? rgba(nav, topbarAlpha) : '')
     setVar('--topbar-fg', navFg)

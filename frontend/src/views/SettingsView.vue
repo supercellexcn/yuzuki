@@ -173,7 +173,7 @@
           <div>面板模糊</div>
           <div class="hint">
             作品卡片、导航栏、侧栏、播放栏、设置卡片等大色块面板的亚克力毛玻璃强度。
-            有壁纸时生效，0 表示关闭。
+            0 表示关闭；无壁纸时只保留玻璃高光质感。
           </div>
         </div>
         <el-slider v-model="panelBlur" :min="0" :max="100" class="blur-slider" />
@@ -183,7 +183,6 @@
           <div>面板透明度</div>
           <div class="hint">
             设置卡片 / 顶部栏 / 详情页信息区 / 播放器面板底色的不透明度，0 全透、100 完全不透明。
-            有壁纸时生效。
           </div>
         </div>
         <el-slider v-model="panelOpacity" :min="0" :max="100" class="blur-slider" />
@@ -191,14 +190,14 @@
       <div class="setting-row">
         <div class="setting-label">
           <div>标签模糊</div>
-          <div class="hint">声优 / 类型标签的亚克力毛玻璃强度，与面板分开调节。有壁纸时生效。</div>
+          <div class="hint">声优 / 类型标签的亚克力毛玻璃强度，与面板分开调节。无壁纸时只保留玻璃高光质感。</div>
         </div>
         <el-slider v-model="tagBlur" :min="0" :max="100" class="blur-slider" />
       </div>
       <div class="setting-row">
         <div class="setting-label">
           <div>文件列表透明度</div>
-          <div class="hint">作品详情页文件列表底色的不透明度。有壁纸时生效。</div>
+          <div class="hint">作品详情页文件列表底色的不透明度。</div>
         </div>
         <el-slider v-model="filelistOpacity" :min="0" :max="100" class="blur-slider" />
       </div>

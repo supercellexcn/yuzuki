@@ -297,6 +297,9 @@ function scrollToTop() {
   /* 面板 / 标签的亚克力模糊：由 useAppearance 按设置覆盖；0 时不会启用 backdrop-filter */
   --panel-blur: 0px;
   --tag-blur: 0px;
+  /* 实际的 backdrop-filter 只在有壁纸时由 useAppearance 下发；none 表示不加合成层 */
+  --acrylic-filter: none;
+  --tag-acrylic-filter: none;
   --card-min-width: 180px;
   /*
    * 各表面底色的不透明度。模糊由三层独立控制：壁纸（--wallpaper-blur）、
@@ -339,22 +342,22 @@ function scrollToTop() {
  * useAppearance 给 <html> 加 .has-acrylic —— 0 强度也会建合成层，纯色背景上毫无意义。
  * 高光渐变是亚克力的关键：极淡的斜向反光让玻璃有厚度，而不是一片均色。
  */
-.has-acrylic .topbar,
-.has-acrylic .sidebar,
-.has-acrylic .sidebar-user-menu,
-.has-acrylic .bottom-player,
-.has-acrylic .mobile-dock,
-.has-acrylic .work-card,
-.has-acrylic .pl-panel,
-.has-acrylic .header,
+html.has-acrylic .topbar,
+html.has-acrylic .sidebar,
+html.has-acrylic .sidebar-user-menu,
+html.has-acrylic .bottom-player,
+html.has-acrylic .mobile-dock,
+html.has-acrylic .work-card,
+html.has-acrylic .pl-panel,
+html.has-acrylic .header,
 /* 系统设置里的子卡片是透明分隔行，叠加 backdrop-filter 会在壁纸上透出一块色斑 */
-.has-acrylic .card:not(.sub-card),
-.has-acrylic .login-card,
-.has-acrylic .file-list,
-.has-acrylic .save-toast,
-.has-acrylic .back-btn {
-  -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(1.7);
-  backdrop-filter: blur(var(--panel-blur)) saturate(1.7);
+html.has-acrylic .card:not(.sub-card),
+html.has-acrylic .login-card,
+html.has-acrylic .file-list,
+html.has-acrylic .save-toast,
+html.has-acrylic .back-btn {
+  -webkit-backdrop-filter: var(--acrylic-filter);
+  backdrop-filter: var(--acrylic-filter);
   background-image: linear-gradient(
     135deg,
     rgba(255, 255, 255, 0.07),
@@ -363,18 +366,18 @@ function scrollToTop() {
   );
 }
 /* 全屏播放器的整屏蒙版：底色不透明度跟随面板透明度，模糊跟随面板模糊 */
-.has-acrylic .fs-scrim {
-  -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(1.7);
-  backdrop-filter: blur(var(--panel-blur)) saturate(1.7);
+html.has-acrylic .fs-scrim {
+  -webkit-backdrop-filter: var(--acrylic-filter);
+  backdrop-filter: var(--acrylic-filter);
 }
 /* 标签：与面板分开控制强度，模糊更轻、饱和度更高，保持小尺寸文字的清晰度 */
-.has-tag-acrylic .cover-tag,
-.has-tag-acrylic .chip-actor,
-.has-tag-acrylic .fs-chip,
-.has-tag-acrylic .el-tag.tag-actor,
-.has-tag-acrylic .el-tag.tag-genre {
-  -webkit-backdrop-filter: blur(var(--tag-blur)) saturate(1.8);
-  backdrop-filter: blur(var(--tag-blur)) saturate(1.8);
+html.has-tag-acrylic .cover-tag,
+html.has-tag-acrylic .chip-actor,
+html.has-tag-acrylic .fs-chip,
+html.has-tag-acrylic .el-tag.tag-actor,
+html.has-tag-acrylic .el-tag.tag-genre {
+  -webkit-backdrop-filter: var(--tag-acrylic-filter);
+  backdrop-filter: var(--tag-acrylic-filter);
 }
 * {
   box-sizing: border-box;
