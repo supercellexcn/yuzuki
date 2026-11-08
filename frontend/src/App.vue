@@ -347,7 +347,8 @@ function scrollToTop() {
 .has-acrylic .work-card,
 .has-acrylic .pl-panel,
 .has-acrylic .header,
-.has-acrylic .card,
+/* 系统设置里的子卡片是透明分隔行，叠加 backdrop-filter 会在壁纸上透出一块色斑 */
+.has-acrylic .card:not(.sub-card),
 .has-acrylic .login-card,
 .has-acrylic .file-list,
 .has-acrylic .save-toast,
@@ -360,6 +361,11 @@ function scrollToTop() {
     rgba(255, 255, 255, 0) 45%,
     rgba(255, 255, 255, 0.03)
   );
+}
+/* 全屏播放器的整屏蒙版：底色不透明度跟随面板透明度，模糊跟随面板模糊 */
+.has-acrylic .fs-scrim {
+  -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(1.7);
+  backdrop-filter: blur(var(--panel-blur)) saturate(1.7);
 }
 /* 标签：与面板分开控制强度，模糊更轻、饱和度更高，保持小尺寸文字的清晰度 */
 .has-tag-acrylic .cover-tag,
