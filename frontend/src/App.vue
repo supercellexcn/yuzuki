@@ -371,13 +371,18 @@ html.has-acrylic .fs-scrim {
   backdrop-filter: var(--acrylic-filter);
 }
 /* 标签：与面板分开控制强度，模糊更轻、饱和度更高，保持小尺寸文字的清晰度 */
-html.has-tag-acrylic .cover-tag,
 html.has-tag-acrylic .chip-actor,
 html.has-tag-acrylic .fs-chip,
 html.has-tag-acrylic .el-tag.tag-actor,
 html.has-tag-acrylic .el-tag.tag-genre {
   -webkit-backdrop-filter: var(--tag-acrylic-filter);
   backdrop-filter: var(--tag-acrylic-filter);
+}
+/* 作品卡片上的声优 / 类型标签不参与标签级模糊：卡片数量多，逐个加 backdrop-filter 也会多出大量合成层 */
+html.has-tag-acrylic .work-card .cover-tag,
+html.has-tag-acrylic .work-card .chip-actor {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 * {
   box-sizing: border-box;
