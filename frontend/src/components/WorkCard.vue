@@ -4,14 +4,13 @@
     :class="{ 'history-card': isHistory }"
     :id="'wc-' + work.id"
     @click="go"
-    v-longpress="isMobile ? undefined : () => fav('work', work.rj_code)"
   >
     <div class="cover">
       <img v-if="work.cover_url" :src="authedUrl(work.cover_url)" :alt="work.title" loading="lazy" />
       <div v-else class="cover-placeholder">{{ work.rj_code }}</div>
-      <!-- RJ 号叠加在封面左上角 -->
-      <div class="rj-badge">{{ work.rj_code }}</div>
-      <!-- 类型标签叠加在封面上（桌面长按收藏标签） -->
+      <!-- 封面左上角：星标收藏 -->
+      <FavoriteStar :rj="work.rj_code" />
+      <!-- 类型标签叠加在封面上 -->
       <div v-if="work.tags.length" class="cover-tags">
         <span
           v-for="t in work.tags"
@@ -19,7 +18,6 @@
           class="cover-tag"
           :class="{ 'tag-custom': t.category === CUSTOM_TAG }"
           @click.stop="emit('select-tag', t.name)"
-          v-longpress="isMobile ? undefined : () => fav('tag', t.name, t.category)"
           >{{ t.name }}</span
         >
       </div>
@@ -70,8 +68,7 @@
         </svg>
       </template>
     </div>
-    <!-- 移动端：长按非封面区域（信息区）打开收藏选择器 -->
-    <div class="meta" v-longpress="isMobile ? openFavPicker : undefined">
+    <div class="meta">
       <!-- 图片模式下的历史卡片：只留一行「播放时间 播放时长」，不显示任何字段名 -->
       <div v-if="isHistory && imageOnly" class="history-compact">
         {{ history?.shortTimeLabel }} {{ history?.durationLabel }}
@@ -102,7 +99,6 @@
             class="row row-click"
             v-if="work.circle"
             @click.stop="emit('select-circle', work.circle)"
-            v-longpress="isMobile ? undefined : () => fav('circle', work.circle)"
           >
             <span class="label">社团</span>
             <span class="value">{{ work.circle }}</span>
@@ -122,7 +118,6 @@
             :key="'a' + a"
             class="chip chip-actor"
             @click.stop="emit('select-actor', a)"
-            v-longpress="isMobile ? undefined : () => fav('actor', a)"
             >{{ a }}</span
           >
         </div>
@@ -137,10 +132,8 @@ import { useRouter } from 'vue-router'
 import { authedUrl } from '../api'
 import { CUSTOM_TAG } from '../api/types'
 import type { Work } from '../api/types'
-import { useFavorite } from '../composables/useFavorite'
-import { useIsMobile } from '../composables/useIsMobile'
 import { useViewMode } from '../composables/useViewMode'
-import { useFavoritesStore } from '../stores/favorites'
+import FavoriteStar from './FavoriteStar.vue'
 
 const props = defineProps<{
   work: Work
@@ -155,10 +148,7 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
-const isMobile = useIsMobile()
-const favorites = useFavoritesStore()
 const { imageOnly } = useViewMode()
-const { fav } = useFavorite()
 const isHistory = computed(() => !!props.history)
 
 const FLAME_PATH =
@@ -192,10 +182,6 @@ function onSeriesClick(e: MouseEvent) {
   if (isHistory.value) return
   e.stopPropagation()
   emit('select-series', props.work.series)
-}
-/** 移动端长按信息区 → 打开收藏选择器（展示 RJ/声优/标签/社团供点选） */
-function openFavPicker() {
-  favorites.openPicker(props.work)
 }
 </script>
 
@@ -245,22 +231,6 @@ function openFavPicker() {
   justify-content: center;
   color: var(--muted);
   font-size: 14px;
-}
-.rj-badge {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 4px 8px;
-  border-radius: 8px;
-  background: rgba(10, 12, 16, 0.88);
-  color: #ffffff;
-  letter-spacing: 0.3px;
-  text-decoration: none;
-  pointer-events: none;
-  user-select: none;
 }
 /*
  * 销量火焰：贴在卡片右上角边框上，仅图片模式显示。

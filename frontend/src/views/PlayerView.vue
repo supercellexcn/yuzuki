@@ -9,19 +9,21 @@
 
     <template v-else>
       <div class="header">
-        <div class="cover" v-longpress="() => fav('work', work!.rj_code)">
+        <div class="cover">
           <img v-if="work.cover_url" :src="authedUrl(work.cover_url)" :alt="work.title" />
           <div v-else class="cover-placeholder">{{ work.rj_code }}</div>
+          <FavoriteStar :rj="work.rj_code" />
         </div>
         <div class="info">
           <h1 class="title">{{ work.title || work.rj_code }}</h1>
-          <div
-            class="meta-row clickable"
-            v-if="work.circle"
-            @click="goCircle(work.circle)"
-            v-longpress="() => fav('circle', work!.circle)"
-          >
+          <div class="meta-row clickable" v-if="work.circle" @click="goCircle(work.circle)">
             <span class="label">社团</span><span class="value">{{ work.circle }}</span>
+            <el-tag
+              size="small"
+              class="fav-tag"
+              @click.stop="fav('circle', work.circle)"
+              >{{ favorites.isFav('circle', work.circle) ? '−' : '+' }}</el-tag
+            >
           </div>
           <div class="meta-row" v-if="work.release_date">
             <span class="label">发售日</span>{{ work.release_date }}
@@ -40,8 +42,9 @@
               size="small"
               class="clickable tag-actor"
               @click="goActor(a)"
-              v-longpress="() => fav('actor', a)"
-              >{{ a }}</el-tag
+              >{{ a }}<span class="fav-toggle" @click.stop="fav('actor', a)">{{
+                favorites.isFav('actor', a) ? '−' : '+'
+              }}</span></el-tag
             >
           </div>
           <div class="meta-row" v-if="work.tags.length">
@@ -53,8 +56,11 @@
               class="clickable"
               :class="{ 'tag-custom': t.category === CUSTOM_TAG, 'tag-genre': t.category !== CUSTOM_TAG }"
               @click="goTag(t.name)"
-              v-longpress="() => fav('tag', t.name, t.category)"
-              >{{ t.name }}</el-tag
+              >{{ t.name }}<span
+                class="fav-toggle"
+                @click.stop="fav('tag', t.name, t.category)"
+                >{{ favorites.isFav('tag', t.name, t.category) ? '−' : '+' }}</span
+              ></el-tag
             >
           </div>
         </div>
@@ -124,6 +130,7 @@ import type { WorkDetail, MediaFile, RecommendationItem } from '../api/types'
 import { useLibraryStore } from '../stores/library'
 import { usePlayerStore } from '../stores/player'
 import { useSettingsStore } from '../stores/settings'
+import { useFavoritesStore } from '../stores/favorites'
 import { useFavorite } from '../composables/useFavorite'
 import { useImageActions, type ImageActionKind } from '../composables/useImageActions'
 import FileList from '../components/FileList.vue'
@@ -131,12 +138,14 @@ import ImageViewer from '../components/ImageViewer.vue'
 import ImageActions from '../components/ImageActions.vue'
 import WorkCard from '../components/WorkCard.vue'
 import BackButton from '../components/BackButton.vue'
+import FavoriteStar from '../components/FavoriteStar.vue'
 
 const route = useRoute()
 const router = useRouter()
 const library = useLibraryStore()
 const player = usePlayerStore()
 const settingsStore = useSettingsStore()
+const favorites = useFavoritesStore()
 const { fav } = useFavorite()
 const { run: runImageActionRaw } = useImageActions()
 
@@ -373,6 +382,8 @@ function onRecPointerDown(e: PointerEvent) {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* 关闭滚动锚定：收起文件夹时浏览器补偿 scrollTop 会把上方详情拽下来 */
+  overflow-anchor: none;
 }
 .back {
   margin-bottom: 4px;
@@ -391,6 +402,7 @@ function onRecPointerDown(e: PointerEvent) {
   aspect-ratio: 1 / 1;
   border-radius: 10px;
   overflow: hidden;
+  position: relative;
   flex-shrink: 0;
   background: #0d0f12;
 }
@@ -443,6 +455,27 @@ function onRecPointerDown(e: PointerEvent) {
   --el-tag-bg-color: var(--tag-genre-bg);
   --el-tag-text-color: var(--tag-genre-fg);
   --el-tag-border-color: transparent;
+}
+/* 标签内的收藏 +/− 号 */
+.fav-toggle {
+  margin-left: 4px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.fav-toggle:hover {
+  color: var(--accent);
+}
+/* 社团后的方形 +/- 标签：主题色、单字、小正方形 */
+.fav-tag {
+  --el-tag-bg-color: var(--accent);
+  --el-tag-text-color: var(--accent-fg);
+  --el-tag-border-color: transparent;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  justify-content: center;
+  font-weight: 700;
+  cursor: pointer;
 }
 .meta-row.clickable:hover {
   color: var(--accent);

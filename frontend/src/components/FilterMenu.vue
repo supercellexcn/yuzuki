@@ -34,7 +34,6 @@
           class="chip"
           :class="{ active: activeValues.includes(it.name), 'chip-custom': it.category === CUSTOM_TAG }"
           @click="pick(it.name)"
-          v-longpress="() => onFav(it)"
         >
           <span class="chip-name">{{ it.name }}</span>
           <span class="chip-count">{{ it.count }}</span>
@@ -51,9 +50,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import type { FavoriteType } from '../api/types'
 import { CUSTOM_TAG } from '../api/types'
-import { useFavorite } from '../composables/useFavorite'
 import { useIsMobile } from '../composables/useIsMobile'
 import SidebarIcon from './SidebarIcon.vue'
 
@@ -62,7 +59,6 @@ const props = withDefaults(
     label: string
     items: { name: string; count: number; category?: string }[]
     activeValues: string[]
-    favType?: FavoriteType
     /** nav = 侧边栏条目；button = 旧的筛选项按钮 */
     variant?: 'nav' | 'button'
     icon?: string
@@ -77,7 +73,6 @@ const isMobile = useIsMobile()
 const route = useRoute()
 const visible = ref(false)
 const kw = ref('')
-const { fav } = useFavorite()
 
 // 在筛选弹层里选中条件后可能跳转到媒体库；页面变了就收起弹层
 watch(
@@ -103,12 +98,6 @@ const filtered = computed(() => {
 
 function pick(name: string) {
   emit('select', name)
-}
-
-/** 长按 chip 收藏对应类型；未配置 favType 时（无收藏语义的菜单）静默忽略。 */
-function onFav(it: { name: string; category?: string }) {
-  if (!props.favType) return
-  void fav(props.favType, it.name, it.category || '')
 }
 </script>
 

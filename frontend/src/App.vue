@@ -142,7 +142,6 @@
 
     <BottomPlayer />
     <FullscreenPlayer />
-    <FavPicker />
     <MobileDock v-if="isMobile && showChrome" />
   </div>
 </template>
@@ -161,7 +160,6 @@ import { useAppearance } from './composables/useAppearance'
 import AppSidebar from './components/AppSidebar.vue'
 import BottomPlayer from './components/BottomPlayer.vue'
 import FullscreenPlayer from './components/FullscreenPlayer.vue'
-import FavPicker from './components/FavPicker.vue'
 import SearchBar from './components/SearchBar.vue'
 import SidebarIcon from './components/SidebarIcon.vue'
 import MobileDock from './components/MobileDock.vue'
@@ -259,7 +257,7 @@ onUnmounted(() => {
   document.documentElement.classList.remove('drawer-open')
 })
 
-// 登录就绪后加载收藏状态（供全站长按判定 isFav）；登出时清空，防止下个用户复用
+// 登录就绪后加载收藏状态（供全站星标 / 加减号判定 isFav）；登出时清空，防止下个用户复用
 watch(
   () => auth.user,
   (u) => {

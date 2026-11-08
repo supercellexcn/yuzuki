@@ -14,7 +14,6 @@
         :collapsed="collapsed"
         :items="circles"
         :active-values="activeOf('circle')"
-        fav-type="circle"
         @select="(v) => addCond('circle', v)"
       />
       <FilterMenu
@@ -33,7 +32,6 @@
         :collapsed="collapsed"
         :items="actors"
         :active-values="activeOf('actor')"
-        fav-type="actor"
         @select="(v) => addCond('actor', v)"
       />
       <FilterMenu
@@ -43,7 +41,6 @@
         :collapsed="collapsed"
         :items="tags"
         :active-values="activeOf('tag')"
-        fav-type="tag"
         @select="(v) => addCond('tag', v)"
       />
 
@@ -84,11 +81,13 @@
           <span class="caret">▾</span>
         </button>
         <!-- 用户菜单：从侧边栏右侧弹出；点击外部区域关闭 -->
-        <div v-if="menuOpen" class="sidebar-user-menu">
-          <button class="user-menu-item" @click="onCommand('change-password')">修改密码</button>
-          <div class="user-menu-divider" />
-          <button class="user-menu-item danger" @click="onCommand('logout')">退出登录</button>
-        </div>
+        <Transition name="user-menu">
+          <div v-if="menuOpen" class="sidebar-user-menu">
+            <button class="user-menu-item" @click="onCommand('change-password')">修改密码</button>
+            <div class="user-menu-divider" />
+            <button class="user-menu-item danger" @click="onCommand('logout')">退出登录</button>
+          </div>
+        </Transition>
       </div>
 
       <!-- 管理功能仅桌面端提供（移动端由路由守卫拦截 /admin） -->
@@ -308,7 +307,13 @@ function onCommand(cmd: string) {
   font-size: 25px;
   line-height: 1;
   flex-shrink: 0;
-  transition: opacity calc(var(--anim-duration) * 0.65) ease;
+  transform: rotate(0deg);
+  transition: transform var(--anim-duration) ease,
+    opacity calc(var(--anim-duration) * 0.65) ease;
+}
+/* 与侧边栏筛选条目一致：展开时三角翻转 */
+.sidebar-user-btn.open .caret {
+  transform: rotate(180deg);
 }
 .sidebar.collapsed .caret {
   opacity: 0;
@@ -333,6 +338,18 @@ function onCommand(cmd: string) {
   flex-direction: column;
   z-index: 320;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  transform-origin: left bottom;
+}
+/* 用户菜单展开/收起动画：与筛选弹层的淡入观感一致 */
+.user-menu-enter-active,
+.user-menu-leave-active {
+  transition: opacity calc(var(--anim-duration) * 0.8) ease,
+    transform calc(var(--anim-duration) * 0.8) ease;
+}
+.user-menu-enter-from,
+.user-menu-leave-to {
+  opacity: 0;
+  transform: translateX(-6px) scale(0.97);
 }
 /* 移动端抽屉旁放不下右侧菜单，改为在按钮上方展开 */
 @media (max-width: 760px) {
@@ -352,6 +369,11 @@ function onCommand(cmd: string) {
     right: 0;
     bottom: calc(100% + 6px);
     min-width: 0;
+    transform-origin: center bottom;
+  }
+  .user-menu-enter-from,
+  .user-menu-leave-to {
+    transform: translateY(6px) scale(0.97);
   }
 }
 </style>

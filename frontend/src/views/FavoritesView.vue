@@ -13,11 +13,11 @@
     <div v-if="loading" class="empty">加载中…</div>
 
     <template v-else>
-      <!-- 作品（默认 Tab）：复用 WorkCard，点击进播放器，长按取消收藏 -->
+      <!-- 作品（默认 Tab）：复用 WorkCard，点击进播放器，点封面星标取消收藏 -->
       <div v-if="activeTab === 'work'" class="grid">
         <WorkCard v-for="w in favorites.works" :key="w.id" :work="w" />
         <div v-if="!favorites.works.length" class="empty">
-          暂无收藏作品<br /><span class="hint">在媒体库中长按作品封面即可收藏</span>
+          暂无收藏作品<br /><span class="hint">点击作品封面左上角的星标即可收藏</span>
         </div>
       </div>
 
@@ -29,13 +29,13 @@
           class="chip"
           :class="{ 'chip-custom': t.category === CUSTOM_TAG }"
           @click="goFilter('tag', t.name)"
-          v-longpress="() => fav('tag', t.name, t.category)"
         >
           <span class="chip-name">{{ t.name }}</span>
           <span class="chip-count" v-if="t.category">{{ t.category }}</span>
+          <span class="fav-minus" @click.stop="fav('tag', t.name, t.category)">−</span>
         </span>
         <div v-if="!favorites.tags.length" class="empty">
-          暂无收藏标签<br /><span class="hint">在媒体库或作品页长按标签即可收藏</span>
+          暂无收藏标签<br /><span class="hint">在作品详情页点击标签后的 + 即可收藏</span>
         </div>
       </div>
 
@@ -46,12 +46,12 @@
           :key="c"
           class="chip"
           @click="goFilter('circle', c)"
-          v-longpress="() => fav('circle', c)"
         >
           <span class="chip-name">{{ c }}</span>
+          <span class="fav-minus-tag" @click.stop="fav('circle', c)">−</span>
         </span>
         <div v-if="!favorites.circles.length" class="empty">
-          暂无收藏社团<br /><span class="hint">在媒体库或作品页长按社团即可收藏</span>
+          暂无收藏社团<br /><span class="hint">在作品详情页点击社团后的 + 即可收藏</span>
         </div>
       </div>
 
@@ -62,12 +62,12 @@
           :key="a"
           class="chip chip-actor"
           @click="goFilter('actor', a)"
-          v-longpress="() => fav('actor', a)"
         >
           <span class="chip-name">{{ a }}</span>
+          <span class="fav-minus" @click.stop="fav('actor', a)">−</span>
         </span>
         <div v-if="!favorites.actors.length" class="empty">
-          暂无收藏声优<br /><span class="hint">在媒体库或作品页长按声优即可收藏</span>
+          暂无收藏声优<br /><span class="hint">在作品详情页点击声优标签后的 + 即可收藏</span>
         </div>
       </div>
     </template>
@@ -171,6 +171,28 @@ onMounted(async () => {
 .chip-count {
   color: var(--muted);
   font-size: 12px;
+}
+/* 标签 / 声优后的取消收藏 − 号 */
+.fav-minus {
+  font-weight: 700;
+  margin-left: 2px;
+}
+.fav-minus:hover {
+  color: var(--accent);
+}
+/* 社团后的 − 号：与详情页社团的方形 +/- 标签一致 */
+.fav-minus-tag {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 700;
 }
 .empty {
   padding: 60px 0;

@@ -39,7 +39,9 @@
             :key="'a' + a"
             class="fs-chip chip-actor clickable"
             @click="goFilter('actor', a)"
-            >{{ a }}</span
+            >{{ a }}<span class="fav-toggle" @click.stop="fav('actor', a)">{{
+              favorites.isFav('actor', a) ? '−' : '+'
+            }}</span></span
           >
         </div>
         <div class="fs-chips" v-if="tags.length">
@@ -48,7 +50,9 @@
             :key="'t' + t.name + t.category"
             class="fs-chip clickable"
             @click="goFilter('tag', t.name)"
-            >{{ t.name }}</span
+            >{{ t.name }}<span class="fav-toggle" @click.stop="fav('tag', t.name, t.category)">{{
+              favorites.isFav('tag', t.name, t.category) ? '−' : '+'
+            }}</span></span
           >
         </div>
       </div>
@@ -482,6 +486,12 @@ function fmt(t: number): string {
 .fs-chip.clickable:hover {
   background: var(--accent);
   color: var(--accent-fg);
+}
+/* 标签内的收藏 +/− 号 */
+.fav-toggle {
+  margin-left: 4px;
+  font-weight: 700;
+  cursor: pointer;
 }
 /* 控件：整体靠下 */
 .fs-controls {

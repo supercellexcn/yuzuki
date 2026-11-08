@@ -19,8 +19,6 @@ export const useFavoritesStore = defineStore('favorites', {
     tags: [] as FavoriteTag[],
     circles: [] as string[],
     actors: [] as string[],
-    // 移动端收藏选择器：当前正在展示的作品
-    pickerWork: null as Work | null,
   }),
   getters: {
     workKeys(state): Set<string> {
@@ -41,13 +39,6 @@ export const useFavoritesStore = defineStore('favorites', {
     async init() {
       if (this.loaded || this.loading) return
       await this.refresh()
-    },
-    /** 打开移动端收藏选择器（展示某作品的 RJ/声优/标签/社团供点选收藏）。 */
-    openPicker(work: Work) {
-      this.pickerWork = work
-    },
-    closePicker() {
-      this.pickerWork = null
     },
     /** 登出时清空本地收藏，避免下个用户复用旧数据。 */
     reset() {
