@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS play_history (
   work_id INTEGER NOT NULL,
   rj_code TEXT NOT NULL DEFAULT '',
   file_id INTEGER,
+  duration_seconds INTEGER NOT NULL DEFAULT 0,
   played_at TEXT NOT NULL
 );
 
@@ -184,6 +185,10 @@ function migrate(d: DatabaseSync): void {
   const ph = d.prepare('PRAGMA table_info(play_history)').all() as unknown as Array<{ name: string }>
   if (!ph.some((c) => c.name === 'rj_code')) {
     d.exec("ALTER TABLE play_history ADD COLUMN rj_code TEXT NOT NULL DEFAULT ''")
+  }
+  // play_history.duration_seconds：该次播放实际听了多少秒，历史查询时按作品汇总
+  if (!ph.some((c) => c.name === 'duration_seconds')) {
+    d.exec('ALTER TABLE play_history ADD COLUMN duration_seconds INTEGER NOT NULL DEFAULT 0')
   }
   d.exec(
     "UPDATE play_history SET rj_code = COALESCE((SELECT rj_code FROM works WHERE works.id = play_history.work_id), '') WHERE rj_code = ''"

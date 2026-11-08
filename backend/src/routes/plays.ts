@@ -16,14 +16,37 @@ playsRouter.post('/', (req, res) => {
   const work = db.prepare('SELECT id FROM works WHERE rj_code = ?').get(rj) as { id: number } | undefined
   if (!work) return res.status(404).json({ error: 'work not found' })
   const now = new Date().toISOString()
-  transaction(db, () => {
-    db.prepare(
-      'INSERT INTO play_history (user_id, work_id, rj_code, file_id, played_at) VALUES (?, ?, ?, ?, ?)'
-    ).run(userId, work.id, rj, fileId, now)
+  const inserted = transaction(db, () => {
+    const info = db
+      .prepare(
+        'INSERT INTO play_history (user_id, work_id, rj_code, file_id, played_at) VALUES (?, ?, ?, ?, ?)'
+      )
+      .run(userId, work.id, rj, fileId, now)
     db.prepare(
       'INSERT INTO play_counts (user_id, work_id, rj_code, count) VALUES (?, ?, ?, 1) ON CONFLICT(user_id, work_id) DO UPDATE SET count = count + 1, rj_code = excluded.rj_code'
     ).run(userId, work.id, rj)
+    return info
   })
+  // 返回 play_id：前端随后用它回写这次播放的实际时长
+  res.json({ ok: true, play_id: Number(inserted.lastInsertRowid) })
+})
+
+// POST /api/plays/:id/duration —— 回写一条播放记录的实际播放时长（秒）
+playsRouter.post('/:id/duration', (req, res) => {
+  const db = getDb()
+  const { userId } = req as unknown as AuthedRequest
+  const id = Number(req.params.id)
+  const seconds = Math.floor(Number(req.body?.seconds))
+  if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(seconds) || seconds < 0) {
+    return res.status(400).json({ error: 'invalid duration' })
+  }
+  // 同一会话可能多次/并发上报，乱序到达时不能把已记录的时长写小
+  const info = db
+    .prepare(
+      'UPDATE play_history SET duration_seconds = MAX(duration_seconds, ?) WHERE id = ? AND user_id = ?'
+    )
+    .run(Math.min(seconds, 7 * 24 * 3600), id, userId)
+  if (!info.changes) return res.status(404).json({ error: 'play not found' })
   res.json({ ok: true })
 })
 
@@ -64,19 +87,20 @@ const GROUP_GAP_SECONDS = 3 * 60 * 60
  */
 const HISTORY_GROUPS_CTE = `
   WITH visible AS (
-    SELECT ph.id AS id, ph.work_id AS work_id, ph.played_at AS played_at
+    SELECT ph.id AS id, ph.work_id AS work_id, ph.played_at AS played_at,
+           ph.duration_seconds AS duration_seconds
     FROM play_history ph
     JOIN works w ON w.id = ph.work_id
     WHERE ph.user_id = ? AND ${hiddenWorkExpr('w')}
   ),
   ordered AS (
-    SELECT id, work_id, played_at,
+    SELECT id, work_id, played_at, duration_seconds,
            LAG(work_id)   OVER (ORDER BY played_at, id) AS prev_work_id,
            LAG(played_at) OVER (ORDER BY played_at, id) AS prev_played_at
     FROM visible
   ),
   marked AS (
-    SELECT id, work_id, played_at,
+    SELECT id, work_id, played_at, duration_seconds,
            CASE
              WHEN prev_work_id IS NULL THEN 1
              WHEN prev_work_id <> work_id THEN 1
@@ -86,7 +110,7 @@ const HISTORY_GROUPS_CTE = `
     FROM ordered
   ),
   runs AS (
-    SELECT id, work_id, played_at,
+    SELECT id, work_id, played_at, duration_seconds,
            SUM(is_new_group) OVER (ORDER BY played_at, id) AS grp
     FROM marked
   ),
@@ -98,7 +122,8 @@ const HISTORY_GROUPS_CTE = `
            MIN(id)        AS play_id,
            MIN(played_at) AS started_at,
            MAX(played_at) AS played_at,
-           COUNT(*)       AS group_count
+           COUNT(*)       AS group_count,
+           SUM(duration_seconds) AS duration_seconds
     FROM runs
     GROUP BY grp
   )`
@@ -120,7 +145,7 @@ playsRouter.get('/', (req, res) => {
   const rows = db
     .prepare(
       `${HISTORY_GROUPS_CTE}
-       SELECT g.play_id, g.started_at, g.played_at, g.group_count, w.*
+       SELECT g.play_id, g.started_at, g.played_at, g.group_count, g.duration_seconds, w.*
        FROM grouped g
        JOIN works w ON w.id = g.work_id
        ORDER BY g.played_at DESC, g.play_id DESC
@@ -135,6 +160,8 @@ playsRouter.get('/', (req, res) => {
       started_at: String(r.started_at || ''),
       // 命名刻意避开 play_count —— 那个是 enrichWork 给出的「该作品历史总播放次数」
       group_count: Number(r.group_count),
+      // 本次连听内所有文件的实际播放秒数之和
+      duration_seconds: Number(r.duration_seconds || 0),
     })),
     total,
     page,

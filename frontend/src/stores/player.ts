@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import type { MediaFile, Work } from '../api/types'
-import { authedUrl, mediaUrl, recordPlay } from '../api'
+import { authedUrl, getToken, mediaUrl, recordPlay, updatePlayDuration } from '../api'
 import { useLibraryStore } from './library'
 import { useSettingsStore } from './settings'
 
@@ -14,6 +14,85 @@ let lastPositionSyncAt = 0
 
 /** 诊断日志只打一次，避免刷屏（媒体控件属于「静默失效」型功能，留个线索好排查）。 */
 let mediaSessionLogged = false
+
+/**
+ * 当前文件的播放时长会话。不放进 reactive state：只在播放事件里读写，不需要触发渲染。
+ * 时长为「实际播放时间」——暂停期间不计入，切歌/暂停/关页时结算。
+ */
+interface DurationSession {
+  playId: number | null
+  /** 已结算的播放毫秒数 */
+  totalMs: number
+  /** 本次继续播放的起点；暂停时为 null */
+  activeSince: number | null
+  /** 已上报的整秒数，避免重复请求 */
+  lastSent: number
+}
+let durationSession: DurationSession | null = null
+let lastDurationSyncAt = 0
+let durationBeaconBound = false
+
+function sessionSeconds(s: DurationSession): number {
+  return Math.floor((s.totalMs + (s.activeSince ? Date.now() - s.activeSince : 0)) / 1000)
+}
+
+/** 把当前累计时长上报到对应播放记录（同一会话只报递增的秒数） */
+function sendDuration(s: DurationSession): void {
+  if (!s.playId) return
+  const seconds = sessionSeconds(s)
+  if (seconds <= s.lastSent) return
+  s.lastSent = seconds
+  updatePlayDuration(s.playId, seconds).catch(() => {})
+}
+
+/** 暂停/切歌结算：把正在播放的这一段计入总时长并上报 */
+function pauseDurationSession(): void {
+  const s = durationSession
+  if (!s) return
+  if (s.activeSince != null) {
+    s.totalMs += Date.now() - s.activeSince
+    s.activeSince = null
+  }
+  sendDuration(s)
+}
+
+function resumeDurationSession(): void {
+  const s = durationSession
+  if (s && s.activeSince == null) s.activeSince = Date.now()
+}
+
+function endDurationSession(): void {
+  if (!durationSession) return
+  pauseDurationSession()
+  durationSession = null
+}
+
+function startDurationSession(rj: string, fileId: number): void {
+  endDurationSession()
+  const s: DurationSession = { playId: null, totalMs: 0, activeSince: Date.now(), lastSent: 0 }
+  durationSession = s
+  recordPlay(rj, fileId)
+    .then((r) => {
+      // 切歌很快时旧请求可能后到，别把旧记录的 id 写到新会话上
+      if (durationSession !== s) return
+      if (r.play_id) {
+        s.playId = r.play_id
+        sendDuration(s)
+      }
+    })
+    .catch(() => {})
+}
+
+/** 页面关闭/切后台时 axios 未必来得及发出，用 sendBeacon 兜底（接口支持 ?token=） */
+function flushDurationBeacon(): void {
+  const s = durationSession
+  if (!s || !s.playId || typeof navigator.sendBeacon !== 'function') return
+  const seconds = sessionSeconds(s)
+  if (seconds <= 0) return
+  const token = getToken()
+  const body = new Blob([JSON.stringify({ seconds })], { type: 'application/json' })
+  navigator.sendBeacon(`/api/plays/${s.playId}/duration?token=${encodeURIComponent(token)}`, body)
+}
 
 interface PlayItem {
   rj: string
@@ -54,6 +133,11 @@ export const usePlayerStore = defineStore('player', {
             lastPositionSyncAt = now
             this.syncPositionState()
           }
+          // 播放中每 30 秒落一次时长，页面被系统直接杀掉时最多丢 30 秒
+          if (durationSession?.activeSince != null && now - lastDurationSyncAt > 30000) {
+            lastDurationSyncAt = now
+            sendDuration(durationSession)
+          }
         })
         a.addEventListener('durationchange', () => {
           this.duration = a.duration || 0
@@ -61,21 +145,34 @@ export const usePlayerStore = defineStore('player', {
         })
         a.addEventListener('play', () => {
           this.playing = true
+          resumeDurationSession()
           this.setMediaPlaybackState('playing')
         })
         a.addEventListener('pause', () => {
           this.playing = false
+          pauseDurationSession()
           this.setMediaPlaybackState('paused')
         })
         a.addEventListener('ended', () => {
           this.playing = false
+          pauseDurationSession()
           // 播完当前文件自动播放下一个（队列为空或已是最后一个则 next() 内部直接返回）
           this.next()
         })
-        a.addEventListener('error', () => (this.playing = false))
+        a.addEventListener('error', () => {
+          this.playing = false
+          pauseDurationSession()
+        })
         a.volume = this.volume
         this.audio = a
         this.initMediaSession()
+        if (!durationBeaconBound) {
+          durationBeaconBound = true
+          window.addEventListener('pagehide', flushDurationBeacon)
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') flushDurationBeacon()
+          })
+        }
       }
       return this.audio
     },
@@ -146,6 +243,7 @@ export const usePlayerStore = defineStore('player', {
       if (this.audio) this.audio.volume = v
     },
     stop() {
+      endDurationSession()
       const a = this.audio
       if (a) {
         a.pause()
@@ -286,9 +384,9 @@ export const usePlayerStore = defineStore('player', {
       }
       this.toggle()
     },
-    /** 记录播放历史 + 本地播放次数 +1 */
+    /** 记录播放历史 + 本地播放次数 +1（同时开启本次文件的时长会话） */
     record(rj: string, fileId: number) {
-      recordPlay(rj, fileId).catch(() => {})
+      startDurationSession(rj, fileId)
       const library = useLibraryStore()
       const w = library.items.find((x) => x.rj_code === rj)
       if (w) w.play_count += 1

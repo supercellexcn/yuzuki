@@ -230,8 +230,17 @@ export async function getMe(): Promise<AuthUser> {
 }
 
 // ---- 播放历史 ----
-export async function recordPlay(rj: string, fileId?: number | null): Promise<{ ok: boolean }> {
+export async function recordPlay(
+  rj: string,
+  fileId?: number | null
+): Promise<{ ok: boolean; play_id: number }> {
   const { data } = await http.post('/plays', { rj, file_id: fileId ?? null })
+  return data
+}
+
+/** 回写一条播放记录的实际播放时长（秒） */
+export async function updatePlayDuration(playId: number, seconds: number): Promise<{ ok: boolean }> {
+  const { data } = await http.post(`/plays/${playId}/duration`, { seconds })
   return data
 }
 

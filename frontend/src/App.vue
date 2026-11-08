@@ -355,6 +355,19 @@ html.image-only .work-card .cover {
   border-radius: 9px;
 }
 /*
+ * 播放历史卡片是例外：图片模式下不收起信息区，而是只显示「播放时间 播放时长」一行
+ * （由 WorkCard 的 history 模式渲染）。封面下面接着信息区，因此仍保留上方圆角。
+ */
+html.image-only .work-card.history-card .meta {
+  max-height: 60px;
+  opacity: 1;
+  padding-top: 8px;
+  padding-bottom: 10px;
+}
+html.image-only .work-card.history-card .cover {
+  border-radius: 9px 9px 0 0;
+}
+/*
  * 控件（输入框 / 按钮 / 下拉）的底色由 useAppearance 覆盖 Element Plus 的
  * --el-fill-color-blank 统一给出（带壁纸时才覆盖），这里不再额外加模糊。
  */

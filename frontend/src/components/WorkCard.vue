@@ -1,6 +1,7 @@
 <template>
   <div
     class="work-card"
+    :class="{ 'history-card': isHistory }"
     :id="'wc-' + work.id"
     @click="go"
     v-longpress="isMobile ? undefined : () => fav('work', work.rj_code)"
@@ -25,7 +26,7 @@
     </div>
     <!-- 销量火焰：贴在卡片右上角边框上（仅图片模式） -->
     <div
-      v-if="flames && imageOnly"
+      v-if="flames && imageOnly && !isHistory"
       class="sales-flames"
       title="销量热度"
       aria-label="销量热度"
@@ -71,42 +72,61 @@
     </div>
     <!-- 移动端：长按非封面区域（信息区）打开收藏选择器 -->
     <div class="meta" v-longpress="isMobile ? openFavPicker : undefined">
-      <div class="title" :title="work.title">{{ work.title || work.rj_code }}</div>
-      <div
-        class="row row-click"
-        v-if="work.series"
-        @click.stop="emit('select-series', work.series)"
-      >
-        <span class="label">系列</span>
-        <span class="value">{{ work.series }}</span>
+      <!-- 图片模式下的历史卡片：只留一行「播放时间 播放时长」，不显示任何字段名 -->
+      <div v-if="isHistory && imageOnly" class="history-compact">
+        {{ history?.shortTimeLabel }} {{ history?.durationLabel }}
       </div>
-      <div
-        class="row row-click"
-        v-if="work.circle"
-        @click.stop="emit('select-circle', work.circle)"
-        v-longpress="isMobile ? undefined : () => fav('circle', work.circle)"
-      >
-        <span class="label">社团</span>
-        <span class="value">{{ work.circle }}</span>
-      </div>
-      <div class="row" v-if="work.sales_count != null">
-        <span class="label">销量</span>
-        <span class="value">{{ work.sales_count.toLocaleString() }}</span>
-      </div>
-      <div class="row" v-if="work.play_count > 0">
-        <span class="label">播放</span>
-        <span class="value">{{ work.play_count }}</span>
-      </div>
-      <div class="chips" v-if="work.actors.length">
-        <span
-          v-for="a in work.actors.slice(0, 4)"
-          :key="'a' + a"
-          class="chip chip-actor"
-          @click.stop="emit('select-actor', a)"
-          v-longpress="isMobile ? undefined : () => fav('actor', a)"
-          >{{ a }}</span
+      <template v-else>
+        <div class="title" :title="work.title">{{ work.title || work.rj_code }}</div>
+        <div
+          class="row"
+          :class="{ 'row-click': !isHistory }"
+          v-if="work.series"
+          @click="onSeriesClick"
         >
-      </div>
+          <span class="label">系列</span>
+          <span class="value">{{ work.series }}</span>
+        </div>
+        <template v-if="isHistory">
+          <div class="row">
+            <span class="label">播放时间</span>
+            <span class="value">{{ history?.timeLabel }}</span>
+          </div>
+          <div class="row">
+            <span class="label">播放时长</span>
+            <span class="value">{{ history?.durationLabel }}</span>
+          </div>
+        </template>
+        <template v-else>
+          <div
+            class="row row-click"
+            v-if="work.circle"
+            @click.stop="emit('select-circle', work.circle)"
+            v-longpress="isMobile ? undefined : () => fav('circle', work.circle)"
+          >
+            <span class="label">社团</span>
+            <span class="value">{{ work.circle }}</span>
+          </div>
+          <div class="row" v-if="work.sales_count != null">
+            <span class="label">销量</span>
+            <span class="value">{{ work.sales_count.toLocaleString() }}</span>
+          </div>
+          <div class="row" v-if="work.play_count > 0">
+            <span class="label">播放</span>
+            <span class="value">{{ work.play_count }}</span>
+          </div>
+        </template>
+        <div class="chips" v-if="work.actors.length">
+          <span
+            v-for="a in work.actors.slice(0, 4)"
+            :key="'a' + a"
+            class="chip chip-actor"
+            @click.stop="emit('select-actor', a)"
+            v-longpress="isMobile ? undefined : () => fav('actor', a)"
+            >{{ a }}</span
+          >
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -122,7 +142,11 @@ import { useIsMobile } from '../composables/useIsMobile'
 import { useViewMode } from '../composables/useViewMode'
 import { useFavoritesStore } from '../stores/favorites'
 
-const props = defineProps<{ work: Work }>()
+const props = defineProps<{
+  work: Work
+  /** 播放历史卡片：用「播放时间 / 播放时长」替换社团 / 销量等作品字段 */
+  history?: { timeLabel: string; shortTimeLabel: string; durationLabel: string }
+}>()
 const emit = defineEmits<{
   (e: 'select-circle', name: string): void
   (e: 'select-series', name: string): void
@@ -135,6 +159,7 @@ const isMobile = useIsMobile()
 const favorites = useFavoritesStore()
 const { imageOnly } = useViewMode()
 const { fav } = useFavorite()
+const isHistory = computed(() => !!props.history)
 
 const FLAME_PATH =
   'M12 2c1.2 4.2-2.8 5.4-2.8 9.2a2.8 2.8 0 0 0 5.6 0c0-1.6-1-2.7-1-4.2 2.2 1.1 4.2 3.7 4.2 7a6 6 0 0 1-12 0C6 9.4 9 6.4 12 2Z'
@@ -161,6 +186,12 @@ const flames = computed(() => {
 
 function go() {
   router.push({ name: 'player', params: { rj: props.work.rj_code } })
+}
+/** 历史卡片里系列不承担筛选：不拦截点击，让事件冒泡到卡片直接打开作品 */
+function onSeriesClick(e: MouseEvent) {
+  if (isHistory.value) return
+  e.stopPropagation()
+  emit('select-series', props.work.series)
 }
 /** 移动端长按信息区 → 打开收藏选择器（展示 RJ/声优/标签/社团供点选） */
 function openFavPicker() {
@@ -359,6 +390,15 @@ function openFavPicker() {
 }
 .row-click:hover .value {
   color: var(--accent);
+}
+/* 图片模式下的历史卡片：封面下只保留这一行 */
+.history-compact {
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chips {
   display: flex;

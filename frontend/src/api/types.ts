@@ -197,6 +197,8 @@ export interface PlayRecord extends Work {
   started_at: string
   /** 这一组合并了几条播放记录（同一时间段内连听的文件数） */
   group_count: number
+  /** 这一组内所有文件的实际播放秒数之和 */
+  duration_seconds: number
 }
 
 export interface PlaysResponse {

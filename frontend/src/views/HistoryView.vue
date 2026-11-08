@@ -1,14 +1,20 @@
 <template>
-  <div class="history">
+  <div class="history" :class="{ cards: view === 'card' }">
     <div class="back">
       <BackButton />
     </div>
-    <h2>播放历史 <span class="count">共 {{ total }} 段</span></h2>
+    <div class="head">
+      <h2>播放历史 <span class="count">共 {{ total }} 段</span></h2>
+      <el-radio-group v-model="view" size="small">
+        <el-radio-button value="list">列表</el-radio-button>
+        <el-radio-button value="card">卡片</el-radio-button>
+      </el-radio-group>
+    </div>
 
     <div v-if="loading && !items.length" class="empty">加载中…</div>
     <div v-else-if="!items.length" class="empty">暂无播放记录</div>
 
-    <div v-else class="list">
+    <div v-else-if="view === 'list'" class="list">
       <div v-for="p in items" :key="p.play_id" class="row" @click="goWork(p.rj_code)">
         <div class="cover">
           <img v-if="p.cover_url" :src="authedUrl(p.cover_url)" :alt="p.title" />
@@ -20,6 +26,7 @@
             <span v-if="p.circle">{{ p.circle }}</span>
             <span v-if="p.sales_count != null"> · 销量 {{ p.sales_count.toLocaleString() }}</span>
             <span v-if="p.play_count > 0"> · 播放 {{ p.play_count }} 次</span>
+            <span v-if="p.duration_seconds > 0"> · 时长 {{ fmtDuration(p.duration_seconds) }}</span>
           </div>
         </div>
         <div class="time">
@@ -30,6 +37,15 @@
       </div>
     </div>
 
+    <div v-else class="grid">
+      <WorkCard
+        v-for="p in items"
+        :key="p.play_id"
+        :work="p"
+        :history="historyMeta(p)"
+      />
+    </div>
+
     <div v-if="items.length" class="end-tip">
       <span v-if="loading && hasMore" class="loading">加载中…</span>
       <span v-else-if="loaded && !hasMore">—— 已经加载所有 ——</span>
@@ -38,11 +54,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getPlays, authedUrl } from '../api'
 import type { PlayRecord } from '../api/types'
 import BackButton from '../components/BackButton.vue'
+import WorkCard from '../components/WorkCard.vue'
 
 const router = useRouter()
 const items = ref<PlayRecord[]>([])
@@ -51,6 +68,25 @@ const page = ref(1)
 const pageSize = 20
 const loading = ref(false)
 const loaded = ref(false)
+
+/** 列表 / 卡片视图，按设备记住选择 */
+type HistoryLayout = 'list' | 'card'
+const VIEW_KEY = 'yuzuki_history_view'
+function readLayout(): HistoryLayout {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'card' ? 'card' : 'list'
+  } catch {
+    return 'list'
+  }
+}
+const view = ref<HistoryLayout>(readLayout())
+watch(view, (v) => {
+  try {
+    localStorage.setItem(VIEW_KEY, v)
+  } catch {
+    /* 隐私模式下写入失败，忽略 */
+  }
+})
 
 const hasMore = computed(() => total.value > items.value.length)
 
@@ -95,6 +131,33 @@ function fmtTime(t: string): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
+
+/** 卡片用的短日期：26-12-01（两位年份）；withClock 时再带上时分 */
+function fmtShortTime(t: string, withClock = false): string {
+  if (!t) return ''
+  const d = new Date(t)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const date = `${String(d.getFullYear()).slice(-2)}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return withClock ? `${date} ${pad(d.getHours())}:${pad(d.getMinutes())}` : date
+}
+
+/** 播放时长：1h30m / 45m / 30s */
+function fmtDuration(sec: number): string {
+  const total = Math.max(0, Math.floor(sec || 0))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  if (h > 0) return m > 0 ? `${h}h${m}m` : `${h}h`
+  if (m > 0) return `${m}m`
+  return `${total}s`
+}
+
+function historyMeta(p: PlayRecord) {
+  return {
+    timeLabel: fmtShortTime(p.played_at, true),
+    shortTimeLabel: fmtShortTime(p.played_at),
+    durationLabel: fmtDuration(p.duration_seconds),
+  }
+}
 </script>
 
 <style scoped>
@@ -103,6 +166,20 @@ function fmtTime(t: string): string {
   flex-direction: column;
   gap: 12px;
   max-width: 900px;
+}
+/* 卡片模式沿用媒体库的整行宽度 */
+.history.cards {
+  max-width: none;
+}
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.head h2 {
+  margin: 0;
 }
 .count {
   font-size: 13px;
@@ -178,6 +255,12 @@ function fmtTime(t: string): string {
 .group-count {
   color: var(--accent);
   margin-bottom: 2px;
+}
+.grid {
+  display: grid;
+  /* 与媒体库一致：卡片尺寸由设置决定 */
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
+  gap: 16px;
 }
 .empty {
   padding: 60px 0;
