@@ -1,5 +1,5 @@
 <template>
-  <div class="settings">
+  <div class="settings" @mouseleave.capture="onSettingsMouseLeave">
     <h2>应用设置</h2>
 
     <div class="card big-card">
@@ -164,9 +164,26 @@
       <div class="setting-row">
         <div class="setting-label">
           <div>壁纸模糊</div>
-          <div class="hint">壁纸本身的模糊程度，越大越柔和。全站只有壁纸做模糊。</div>
+          <div class="hint">壁纸本身的模糊程度，越大越柔和。拖动后立即生效。</div>
         </div>
         <el-slider v-model="wallpaperBlur" :min="0" :max="100" class="blur-slider" />
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          <div>面板模糊</div>
+          <div class="hint">
+            作品卡片、导航栏、侧栏、播放栏、设置卡片等大色块面板的亚克力毛玻璃强度。
+            有壁纸时生效，0 表示关闭。
+          </div>
+        </div>
+        <el-slider v-model="panelBlur" :min="0" :max="100" class="blur-slider" />
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          <div>标签模糊</div>
+          <div class="hint">声优 / 类型标签的亚克力毛玻璃强度，与面板分开调节。有壁纸时生效。</div>
+        </div>
+        <el-slider v-model="tagBlur" :min="0" :max="100" class="blur-slider" />
       </div>
       <div class="setting-row">
         <div class="setting-label">
@@ -408,14 +425,18 @@ const coverFileInput = ref<HTMLInputElement | null>(null)
 
 const saving = ref(false)
 const autoSavePending = ref(false)
-const autoSaveSeconds = ref(10)
-let autoSaveDelayTimer: number | undefined
+const autoSaveSeconds = ref(5)
+let autoSaveFallbackTimer: number | undefined
 let autoSaveCountdown: number | undefined
+let wallpaperSaveTimer: number | undefined
+/** 是否有「非壁纸」设置未保存（壁纸相关改动立即生效，不弹提示） */
+const dirtyNonWallpaper = ref(false)
 /** 初始化 / 取消修改回填表单时，避免被 watch 当成用户修改 */
 let suppressAutoSave = true
-/** 停止修改 3 秒后才弹出提示，随后倒计时 10 秒再保存。 */
-const AUTO_SAVE_DELAY_MS = 3000
-const AUTO_SAVE_COUNTDOWN = 10
+/** 鼠标离开控件后立即弹提示；纯键盘操作靠这个延时兜底。 */
+const AUTO_SAVE_FALLBACK_MS = 1500
+/** 提示出现后倒计时 5 秒保存。 */
+const AUTO_SAVE_COUNTDOWN = 5
 const scanning = ref(false)
 const scanJob = ref<ScanJob | null>(null)
 const coverRunning = ref(false)
@@ -439,8 +460,14 @@ const {
   bumpWallpaperVersion,
   previewWallpaperEnabled,
   clearWallpaperEnabledPreview,
+  previewWallpaperBlur,
+  clearWallpaperBlurPreview,
 } = useAppearance()
 const wallpaperBlur = ref(20)
+/** 面板亚克力模糊（0-100） */
+const panelBlur = ref(40)
+/** 标签亚克力模糊（0-100） */
+const tagBlur = ref(30)
 const panelOpacity = ref(62)
 const filelistOpacity = ref(62)
 const controlOpacity = ref(70)
@@ -501,6 +528,8 @@ function currentPayload(): Partial<AppSettings> {
     wallpaper_desktop_enabled: wallpaperEnabled.desktop,
     wallpaper_mobile_enabled: wallpaperEnabled.mobile,
     wallpaper_blur: wallpaperBlur.value,
+    panel_blur: panelBlur.value,
+    tag_blur: tagBlur.value,
     panel_opacity: panelOpacity.value,
     filelist_opacity: filelistOpacity.value,
     control_opacity: controlOpacity.value,
@@ -532,6 +561,8 @@ function applySettingsToForm(s: AppSettings | null) {
   wallpaperEnabled.desktop = s.wallpaper_desktop_enabled !== false
   wallpaperEnabled.mobile = s.wallpaper_mobile_enabled !== false
   wallpaperBlur.value = s.wallpaper_blur
+  panelBlur.value = s.panel_blur
+  tagBlur.value = s.tag_blur
   panelOpacity.value = s.panel_opacity
   filelistOpacity.value = s.filelist_opacity
   controlOpacity.value = s.control_opacity
@@ -545,6 +576,7 @@ function applySettingsToForm(s: AppSettings | null) {
   animationDuration.value = s.animation_duration
 }
 
+/** 触发「弹出保存提示」的表单状态：壁纸相关（模糊 / 启停）不在其中，它们立即生效。 */
 const formState = computed(() => [
   [...paths.value],
   scanDepth.value,
@@ -557,9 +589,8 @@ const formState = computed(() => [
   coverDir.value,
   recEnabled.value,
   recAutoCalc.value,
-  wallpaperEnabled.desktop,
-  wallpaperEnabled.mobile,
-  wallpaperBlur.value,
+  panelBlur.value,
+  tagBlur.value,
   panelOpacity.value,
   filelistOpacity.value,
   controlOpacity.value,
@@ -574,44 +605,97 @@ const formState = computed(() => [
 ])
 
 function clearAutoSaveTimers() {
-  if (autoSaveDelayTimer !== undefined) {
-    clearTimeout(autoSaveDelayTimer)
-    autoSaveDelayTimer = undefined
+  if (autoSaveFallbackTimer !== undefined) {
+    clearTimeout(autoSaveFallbackTimer)
+    autoSaveFallbackTimer = undefined
   }
   if (autoSaveCountdown !== undefined) {
     clearInterval(autoSaveCountdown)
     autoSaveCountdown = undefined
   }
+  if (wallpaperSaveTimer !== undefined) {
+    clearTimeout(wallpaperSaveTimer)
+    wallpaperSaveTimer = undefined
+  }
 }
 
-/** 停止修改 3 秒后弹出提示，再倒计时 10 秒保存；期间可点 × 取消。 */
-function scheduleAutoSave() {
-  if (suppressAutoSave) return
-  clearAutoSaveTimers()
-  // 恢复修改期间先收起旧提示，等这次改完 3 秒后再出现
-  autoSavePending.value = false
+/** 弹出「将在 5 秒后保存」提示并开始倒计时；重复调用会重置倒计时。 */
+function startAutoSaveCountdown() {
+  if (autoSaveFallbackTimer !== undefined) {
+    clearTimeout(autoSaveFallbackTimer)
+    autoSaveFallbackTimer = undefined
+  }
+  if (autoSaveCountdown !== undefined) clearInterval(autoSaveCountdown)
+  autoSavePending.value = true
   autoSaveSeconds.value = AUTO_SAVE_COUNTDOWN
-  autoSaveDelayTimer = window.setTimeout(() => {
-    autoSaveDelayTimer = undefined
-    autoSavePending.value = true
-    autoSaveSeconds.value = AUTO_SAVE_COUNTDOWN
-    autoSaveCountdown = window.setInterval(() => {
-      autoSaveSeconds.value -= 1
-      if (autoSaveSeconds.value <= 0) {
-        clearAutoSaveTimers()
-        void save(false)
-      }
-    }, 1000)
-  }, AUTO_SAVE_DELAY_MS)
+  autoSaveCountdown = window.setInterval(() => {
+    autoSaveSeconds.value -= 1
+    if (autoSaveSeconds.value <= 0) {
+      clearAutoSaveTimers()
+      void save(false)
+    }
+  }, 1000)
 }
-watch(formState, () => scheduleAutoSave())
+
+/**
+ * 鼠标离开控件（.setting-row）后立即弹提示。
+ * mouseleave 不冒泡，但捕获阶段能收到；目标可能是行内子元素，
+ * 这里只处理「离开整行」的情况。
+ */
+function onSettingsMouseLeave(e: MouseEvent) {
+  if (!dirtyNonWallpaper.value || autoSavePending.value) return
+  const row = (e.target as HTMLElement | null)?.closest?.('.setting-row')
+  if (!row) return
+  const next = e.relatedTarget as Node | null
+  if (next && row.contains(next)) return
+  startAutoSaveCountdown()
+}
+
+watch(formState, () => {
+  if (suppressAutoSave) return
+  dirtyNonWallpaper.value = true
+  // 提示已出现时继续修改 → 重置 5 秒倒计时
+  if (autoSavePending.value) {
+    startAutoSaveCountdown()
+    return
+  }
+  // 纯键盘操作等没有鼠标离开事件的场景：停止修改 1.5 秒后兜底弹出
+  if (autoSaveFallbackTimer !== undefined) clearTimeout(autoSaveFallbackTimer)
+  autoSaveFallbackTimer = window.setTimeout(() => {
+    autoSaveFallbackTimer = undefined
+    startAutoSaveCountdown()
+  }, AUTO_SAVE_FALLBACK_MS)
+})
+
+/** 壁纸相关设置：立即预览；没有其他未保存修改时静默保存（不弹提示）。 */
+function scheduleSilentWallpaperSave() {
+  if (dirtyNonWallpaper.value || autoSavePending.value) return
+  if (wallpaperSaveTimer !== undefined) clearTimeout(wallpaperSaveTimer)
+  wallpaperSaveTimer = window.setTimeout(() => {
+    wallpaperSaveTimer = undefined
+    if (dirtyNonWallpaper.value || autoSavePending.value) return
+    void save(false)
+  }, 600)
+}
+
+watch(
+  [wallpaperBlur, () => wallpaperEnabled.desktop, () => wallpaperEnabled.mobile],
+  () => {
+    if (suppressAutoSave) return
+    // 壁纸模糊拖动即时生效；启停已由 toggleWallpaper 即时预览
+    previewWallpaperBlur(wallpaperBlur.value)
+    scheduleSilentWallpaperSave()
+  }
+)
 
 /** 取消本次未保存的修改，回填上一次保存成功的设置。 */
 async function cancelAutoSave() {
   clearAutoSaveTimers()
   autoSavePending.value = false
+  dirtyNonWallpaper.value = false
   suppressAutoSave = true
   applySettingsToForm(store.settings)
+  clearWallpaperBlurPreview()
   clearWallpaperEnabledPreview()
   await nextTick()
   suppressAutoSave = false
@@ -641,6 +725,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearAutoSaveTimers()
+  clearWallpaperBlurPreview()
   clearWallpaperEnabledPreview()
   stopPolling()
   stopCoverPolling()
@@ -653,6 +738,8 @@ async function save(showMessage = true) {
   saving.value = true
   try {
     await store.save(currentPayload())
+    dirtyNonWallpaper.value = false
+    clearWallpaperBlurPreview()
     applyAppearance() // 立即生效，无需刷新页面
     if (showMessage) ElMessage.success('已保存')
   } catch (e) {

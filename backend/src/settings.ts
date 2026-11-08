@@ -51,10 +51,12 @@ export interface AppSettings {
   wallpaper_desktop_enabled: boolean
   wallpaper_mobile_enabled: boolean
   // 壁纸本身的模糊强度（0-100，映射为 filter 的 px）。
-  // 其余表面（面板 / 文件列表 / 控件）刻意不做磨砂：壁纸已经整层模糊过，
-  // 再叠一层模糊几乎看不出差别，却要为每个元素付一个合成层的代价（长列表里是几万个）。
-  // 这些表面改为控制「底色的不透明度」。
   wallpaper_blur: number
+  // 面板的亚克力毛玻璃强度（0-100，映射为 backdrop-filter 的 px）。
+  // 作用于作品卡片、导航栏、侧栏、播放栏、设置卡片等大色块面板；有壁纸时生效。
+  panel_blur: number
+  // 声优 / 类型标签的亚克力毛玻璃强度（0-100），与面板分开调节。
+  tag_blur: number
   // 面板（顶部栏 / 详情页信息区 / 播放器 / 设置卡片）底色不透明度（0-100，越大越不透明）
   panel_opacity: number
   // 作品详情页文件列表底色不透明度（0-100）
@@ -109,6 +111,8 @@ const DEFAULTS: AppSettings = {
   wallpaper_desktop_enabled: true,
   wallpaper_mobile_enabled: true,
   wallpaper_blur: 20,
+  panel_blur: 40,
+  tag_blur: 30,
   panel_opacity: 62,
   filelist_opacity: 62,
   control_opacity: 70,
@@ -201,6 +205,8 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
   next.wallpaper_desktop_enabled = Boolean(patch.wallpaper_desktop_enabled ?? cur.wallpaper_desktop_enabled)
   next.wallpaper_mobile_enabled = Boolean(patch.wallpaper_mobile_enabled ?? cur.wallpaper_mobile_enabled)
   next.wallpaper_blur = clampPercent(patch.wallpaper_blur ?? cur.wallpaper_blur, DEFAULTS.wallpaper_blur)
+  next.panel_blur = clampPercent(patch.panel_blur ?? cur.panel_blur, DEFAULTS.panel_blur)
+  next.tag_blur = clampPercent(patch.tag_blur ?? cur.tag_blur, DEFAULTS.tag_blur)
   next.panel_opacity = clampPercent(patch.panel_opacity ?? cur.panel_opacity, DEFAULTS.panel_opacity)
   next.filelist_opacity = clampPercent(patch.filelist_opacity ?? cur.filelist_opacity, DEFAULTS.filelist_opacity)
   next.control_opacity = clampPercent(patch.control_opacity ?? cur.control_opacity, DEFAULTS.control_opacity)

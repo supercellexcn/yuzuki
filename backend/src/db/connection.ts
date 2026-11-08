@@ -208,7 +208,8 @@ function migrate(d: DatabaseSync): void {
   // 已废弃的设置项：作品卡片下半部分颜色（现由统一主题色 theme_color_nav 决定）
   d.exec("DELETE FROM settings WHERE key = 'theme_color_card'")
 
-  // 已废弃的设置项：各表面的模糊（现只保留「壁纸模糊」，其余表面改为控制不透明度）。
+  // 已废弃的设置项：旧的各表面模糊 key（现由新的 panel_blur / tag_blur 统一控制，
+  // 旧 key 不再读取）。
   // 必须真删掉：getSettings() 会把 settings 表里的每一行都并进对象，
   // 残留的旧 key 会在下次保存设置时被原样写回去。
   d.exec(

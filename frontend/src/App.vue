@@ -294,14 +294,15 @@ function scrollToTop() {
   /* ---- 外观变量（由 composables/useAppearance.ts 按设置覆盖）---- */
   --wallpaper-image: none;
   --wallpaper-blur: 6px;
+  /* 面板 / 标签的亚克力模糊：由 useAppearance 按设置覆盖；0 时不会启用 backdrop-filter */
+  --panel-blur: 0px;
+  --tag-blur: 0px;
   --card-min-width: 180px;
   /*
-   * 各表面底色的不透明度。全站只有「壁纸」做模糊（--wallpaper-blur）：
-   * 壁纸已经整层糊过，面板/标签再叠一层 backdrop-filter 几乎看不出差别，
-   * 却要给每个元素建一个合成层（媒体库几千张卡片时就是几万个），代价远大于收益。
-   * 所以这些表面只调「底色透多少」。
-   * 有壁纸时由 useAppearance 按设置覆盖；没有壁纸时面板保持不透明，
-   * 否则半透明面板盖在纯色背景上会糊成一片、失去层次。
+   * 各表面底色的不透明度。模糊由三层独立控制：壁纸（--wallpaper-blur）、
+   * 面板（--panel-blur）、标签（--tag-blur）。有壁纸时由 useAppearance 按设置覆盖；
+   * 没有壁纸时面板保持不透明、且不启用 backdrop-filter，否则半透明面板盖在纯色
+   * 背景上会糊成一片、失去层次，还要白付合成层代价。
    */
   --filelist-alpha: 1;
   --control-rgb: 38, 43, 51;
@@ -330,6 +331,44 @@ function scrollToTop() {
 /* 控件圆角：由 Element Plus 默认的 4px 放大（提高特异性以覆盖其 :root 定义） */
 :root:root {
   --el-border-radius-base: 12px;
+}
+/* ---- 亚克力毛玻璃 ---- */
+/*
+ * 面板：作品卡片、导航栏、侧栏、底部播放栏、移动圆盘、全屏播放器、详情信息区、
+ * 设置卡片、登录卡、文件列表等大色块。只在「有壁纸且面板模糊 > 0」时由
+ * useAppearance 给 <html> 加 .has-acrylic —— 0 强度也会建合成层，纯色背景上毫无意义。
+ * 高光渐变是亚克力的关键：极淡的斜向反光让玻璃有厚度，而不是一片均色。
+ */
+.has-acrylic .topbar,
+.has-acrylic .sidebar,
+.has-acrylic .sidebar-user-menu,
+.has-acrylic .bottom-player,
+.has-acrylic .mobile-dock,
+.has-acrylic .work-card,
+.has-acrylic .pl-panel,
+.has-acrylic .header,
+.has-acrylic .card,
+.has-acrylic .login-card,
+.has-acrylic .file-list,
+.has-acrylic .save-toast,
+.has-acrylic .back-btn {
+  -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(1.7);
+  backdrop-filter: blur(var(--panel-blur)) saturate(1.7);
+  background-image: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.07),
+    rgba(255, 255, 255, 0) 45%,
+    rgba(255, 255, 255, 0.03)
+  );
+}
+/* 标签：与面板分开控制强度，模糊更轻、饱和度更高，保持小尺寸文字的清晰度 */
+.has-tag-acrylic .cover-tag,
+.has-tag-acrylic .chip-actor,
+.has-tag-acrylic .fs-chip,
+.has-tag-acrylic .el-tag.tag-actor,
+.has-tag-acrylic .el-tag.tag-genre {
+  -webkit-backdrop-filter: blur(var(--tag-blur)) saturate(1.8);
+  backdrop-filter: blur(var(--tag-blur)) saturate(1.8);
 }
 * {
   box-sizing: border-box;

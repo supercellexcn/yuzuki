@@ -14,10 +14,11 @@ import { useIsMobile } from './useIsMobile'
  * 两个要点：
  * 1) 主题色一律以「带 alpha 的 rgba」下发（在 JS 里算好），不用 CSS 的 color-mix ——
  *    兼容性更好，且半透明才能让壁纸透出来。
- * 2) 全站只有壁纸做模糊：面板 / 文件列表 / 控件都不加 backdrop-filter（壁纸已整层糊过，
- *    再叠一层看不出差别却要给每个元素建合成层，媒体库几千张卡片时就是几万个），
- *    它们只受「底色不透明度」控制。主题色统一驱动 hover 框线、播放条、面板底色等；
- *    只有「声优标签」和「作品类型标签」是独立配色 + 独立透明度。
+ * 2) 模糊分三层：壁纸（filter: blur）、面板（backdrop-filter，作用于卡片 / 导航栏 /
+ *    侧栏 / 播放栏 / 设置卡片等大色块）、标签（backdrop-filter，独立强度）。
+ *    面板与标签仅在「有壁纸且模糊强度 > 0」时启用，避免纯色背景上白付合成层代价。
+ *    主题色统一驱动 hover 框线、播放条、面板底色等；声优标签与作品类型标签是
+ *    独立配色 + 独立透明度。
  */
 
 type RGB = [number, number, number]
@@ -55,6 +56,8 @@ const hasWallpaperMobile = ref(false)
 const wallpaperEnabledPreview = ref<Partial<Record<WallpaperKind, boolean>>>({})
 /** 上传 / 删除壁纸后自增，用于给图片 URL 破缓存 */
 const wallpaperVersion = ref(0)
+/** 设置页拖动「壁纸模糊」时的即时预览值（保存前就让页面响应） */
+const wallpaperBlurPreview = ref<number | null>(null)
 
 let wired = false
 
@@ -230,13 +233,22 @@ export function useAppearance() {
         : ''
     root.style.setProperty('--wallpaper-image', wallUrl ? `url("${wallUrl}")` : 'none')
 
-    // ---- 模糊：只作用于壁纸本身（其余表面的 backdrop-filter 已全部移除）----
-    root.style.setProperty('--wallpaper-blur', `${Math.round(s.wallpaper_blur * 0.3)}px`)
+    // ---- 模糊：壁纸 / 面板 / 标签三层独立 ----
+    const wallpaperBlur =
+      wallpaperBlurPreview.value !== null ? wallpaperBlurPreview.value : s.wallpaper_blur
+    root.style.setProperty('--wallpaper-blur', `${Math.round(wallpaperBlur * 0.3)}px`)
 
     // ---- 底色不透明度：面板 / 文件列表 / 控件 ----
     // 面板与文件列表没有壁纸时不生效（保持不透明）：半透明面板盖在纯色背景上会糊成一片、失去层次。
     // 控件（输入框 / 按钮 / 标签底色）始终生效 —— 它们盖在卡片和面板上，本来就不依赖壁纸。
     const wp = Boolean(wallUrl)
+    const panelBlur = wp ? Math.round(Math.max(0, Math.min(100, s.panel_blur)) * 0.2) : 0
+    const tagBlur = wp ? Math.round(Math.max(0, Math.min(100, s.tag_blur)) * 0.2) : 0
+    root.style.setProperty('--panel-blur', `${panelBlur}px`)
+    root.style.setProperty('--tag-blur', `${tagBlur}px`)
+    // 只有真正需要时才启用 backdrop-filter（0px 也会建合成层，纯色背景上纯属浪费）
+    root.classList.toggle('has-acrylic', panelBlur > 0)
+    root.classList.toggle('has-tag-acrylic', tagBlur > 0)
     root.style.setProperty('--panel-alpha', String(wp ? pct(s.panel_opacity, DEFAULT_PANEL_OPACITY) : 1))
     root.style.setProperty(
       '--filelist-alpha',
@@ -341,6 +353,17 @@ export function useAppearance() {
     apply()
   }
 
+  /** 设置页拖动「壁纸模糊」时的即时预览（壁纸相关设置要求立即生效）。 */
+  function previewWallpaperBlur(value: number): void {
+    wallpaperBlurPreview.value = value
+    apply()
+  }
+
+  /** 撤掉壁纸模糊预览（保存 / 取消 / 离开设置页时调用）。 */
+  function clearWallpaperBlurPreview(): void {
+    wallpaperBlurPreview.value = null
+  }
+
   if (!wired) {
     wired = true
     let wallpapersChecked = false
@@ -379,5 +402,7 @@ export function useAppearance() {
     bumpWallpaperVersion,
     previewWallpaperEnabled,
     clearWallpaperEnabledPreview,
+    previewWallpaperBlur,
+    clearWallpaperBlurPreview,
   }
 }
