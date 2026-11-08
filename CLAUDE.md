@@ -39,6 +39,11 @@
 - **每次改动完成后立即本地 commit**，不攒着
 - 作品可见性/隐藏相关查询必须带 `hiddenWorkExpr`（见 `services/hidden.ts`）
 
+## 全局约束（优先级最高）
+1. **先方案后动手**：任何修改前先给出明确方案（改哪些文件、怎么改、影响范围），确认后再改；禁止边猜边改、反复试错。
+2. **禁止全库扫描**：优先查阅本文件的目录速查与 `README.md`；已知位置直接 Read/Grep 精确片段，不做全仓库遍历、不派探索型子代理。
+3. **只用断言验证**：验证靠 typecheck / 断言 / 接口返回码等确定性检查；禁止截图、识图、启动浏览器逐屏确认。
+
 ## 省 Token 工作规范（每次任务都遵守）
 1. **先定位后读取**：用 Grep 拿行号，再用 Read 的 `offset`/`limit` 只读相关片段。
 2. **大文件禁止整读**（>300 行）：`SettingsView.vue` 按 `<div class="card-title">` 小节定位；`App.vue` / `FullscreenPlayer.vue` / `PlayerView.vue` 先找 template/script/style 边界再分段读。
