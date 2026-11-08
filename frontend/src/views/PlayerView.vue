@@ -40,7 +40,7 @@
               v-for="a in work.actors"
               :key="a"
               size="small"
-              class="clickable tag-actor"
+              class="clickable tag-actor tag-favable"
               @click="goActor(a)"
               >{{ a }}<span class="fav-toggle" @click.stop="fav('actor', a)">{{
                 favorites.isFav('actor', a) ? '−' : '+'
@@ -53,7 +53,7 @@
               v-for="t in work.tags"
               :key="t.name + t.category"
               size="small"
-              class="clickable"
+              class="clickable tag-favable"
               :class="{ 'tag-custom': t.category === CUSTOM_TAG, 'tag-genre': t.category !== CUSTOM_TAG }"
               @click="goTag(t.name)"
               >{{ t.name }}<span
@@ -456,11 +456,38 @@ function onRecPointerDown(e: PointerEvent) {
   --el-tag-text-color: var(--tag-genre-fg);
   --el-tag-border-color: transparent;
 }
-/* 标签内的收藏 +/− 号 */
+/* 标签内的收藏 +/−：让右侧自成正方形区域，左边用渐隐分割线隔开 */
+.el-tag.tag-favable {
+  padding-right: 0;
+}
 .fav-toggle {
-  margin-left: 4px;
+  width: 22px;
+  height: 22px;
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex-shrink: 0;
   font-weight: 700;
   cursor: pointer;
+}
+.fav-toggle::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 62%;
+  transform: translateY(-50%);
+  background: linear-gradient(
+    180deg,
+    transparent,
+    currentColor 35%,
+    currentColor 65%,
+    transparent
+  );
+  opacity: 0.4;
 }
 .fav-toggle:hover {
   color: var(--accent);

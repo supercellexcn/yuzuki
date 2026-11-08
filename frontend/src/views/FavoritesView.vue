@@ -26,13 +26,13 @@
         <span
           v-for="t in favorites.tags"
           :key="t.name + t.category"
-          class="chip"
+          class="chip chip-favable"
           :class="{ 'chip-custom': t.category === CUSTOM_TAG }"
           @click="goFilter('tag', t.name)"
         >
           <span class="chip-name">{{ t.name }}</span>
           <span class="chip-count" v-if="t.category">{{ t.category }}</span>
-          <span class="fav-minus" @click.stop="fav('tag', t.name, t.category)">−</span>
+          <span class="fav-toggle" @click.stop="fav('tag', t.name, t.category)">−</span>
         </span>
         <div v-if="!favorites.tags.length" class="empty">
           暂无收藏标签<br /><span class="hint">在作品详情页点击标签后的 + 即可收藏</span>
@@ -41,14 +41,11 @@
 
       <!-- 社团 -->
       <div v-else-if="activeTab === 'circle'" class="chips">
-        <span
-          v-for="c in favorites.circles"
-          :key="c"
-          class="chip"
-          @click="goFilter('circle', c)"
-        >
-          <span class="chip-name">{{ c }}</span>
-          <span class="fav-minus-tag" @click.stop="fav('circle', c)">−</span>
+        <span v-for="c in favorites.circles" :key="c" class="chip-row">
+          <span class="chip" @click="goFilter('circle', c)">
+            <span class="chip-name">{{ c }}</span>
+          </span>
+          <span class="fav-square" @click.stop="fav('circle', c)">−</span>
         </span>
         <div v-if="!favorites.circles.length" class="empty">
           暂无收藏社团<br /><span class="hint">在作品详情页点击社团后的 + 即可收藏</span>
@@ -60,11 +57,11 @@
         <span
           v-for="a in favorites.actors"
           :key="a"
-          class="chip chip-actor"
+          class="chip chip-actor chip-favable"
           @click="goFilter('actor', a)"
         >
           <span class="chip-name">{{ a }}</span>
-          <span class="fav-minus" @click.stop="fav('actor', a)">−</span>
+          <span class="fav-toggle" @click.stop="fav('actor', a)">−</span>
         </span>
         <div v-if="!favorites.actors.length" class="empty">
           暂无收藏声优<br /><span class="hint">在作品详情页点击声优标签后的 + 即可收藏</span>
@@ -172,27 +169,63 @@ onMounted(async () => {
   color: var(--muted);
   font-size: 12px;
 }
-/* 标签 / 声优后的取消收藏 − 号 */
-.fav-minus {
-  font-weight: 700;
-  margin-left: 2px;
+/* 社团 = 标签 + 独立的方形 − 标签 */
+.chip-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
-.fav-minus:hover {
+/* 带 − 号的标签：右侧正方形区域，左边用渐隐分割线隔开 */
+.chip-favable {
+  height: 32px;
+  padding: 0 0 0 14px;
+}
+.fav-toggle {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex-shrink: 0;
+  font-weight: 700;
+  cursor: pointer;
+}
+.fav-toggle::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 62%;
+  transform: translateY(-50%);
+  background: linear-gradient(
+    180deg,
+    transparent,
+    currentColor 35%,
+    currentColor 65%,
+    transparent
+  );
+  opacity: 0.4;
+}
+.fav-toggle:hover {
   color: var(--accent);
 }
-/* 社团后的 − 号：与详情页社团的方形 +/- 标签一致 */
-.fav-minus-tag {
-  width: 18px;
-  height: 18px;
+/* 社团后的独立方形 − 标签：主题色，与详情页一致 */
+.fav-square {
+  width: 26px;
+  height: 26px;
   border-radius: 4px;
   background: var(--accent);
   color: var(--accent-fg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  flex-shrink: 0;
+  font-size: 14px;
   line-height: 1;
   font-weight: 700;
+  cursor: pointer;
 }
 .empty {
   padding: 60px 0;

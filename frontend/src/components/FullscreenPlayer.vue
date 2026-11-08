@@ -32,12 +32,15 @@
         <div class="fs-title">{{ workTitle }}</div>
         <div class="fs-meta-row clickable" v-if="circle" @click="goFilter('circle', circle)">
           <span class="fs-label">社团</span><span class="fs-value">{{ circle }}</span>
+          <span class="fs-fav-tag" @click.stop="fav('circle', circle)">{{
+            favorites.isFav('circle', circle) ? '−' : '+'
+          }}</span>
         </div>
         <div class="fs-chips" v-if="actors.length">
           <span
             v-for="a in actors.slice(0, 6)"
             :key="'a' + a"
-            class="fs-chip chip-actor clickable"
+            class="fs-chip chip-actor clickable favable"
             @click="goFilter('actor', a)"
             >{{ a }}<span class="fav-toggle" @click.stop="fav('actor', a)">{{
               favorites.isFav('actor', a) ? '−' : '+'
@@ -48,7 +51,7 @@
           <span
             v-for="t in tags.slice(0, 8)"
             :key="'t' + t.name + t.category"
-            class="fs-chip clickable"
+            class="fs-chip clickable favable"
             @click="goFilter('tag', t.name)"
             >{{ t.name }}<span class="fav-toggle" @click.stop="fav('tag', t.name, t.category)">{{
               favorites.isFav('tag', t.name, t.category) ? '−' : '+'
@@ -64,7 +67,8 @@
             <PlaybackIcon name="list" /> 播放列表
           </el-button>
           <el-button size="small" :type="isWorkFav ? 'danger' : 'default'" @click="onToggleFav">
-            {{ isWorkFav ? '♥ 已收藏' : '♡ 收藏' }}
+            <SidebarIcon name="star" class="fs-fav-icon" :class="{ active: isWorkFav }" />
+            {{ isWorkFav ? '已收藏' : '收藏' }}
           </el-button>
           <el-button size="small" @click="goDetail">
             <PlaybackIcon name="external" /> 跳转详情
@@ -156,6 +160,7 @@ import { useRouter } from 'vue-router'
 import { usePlayerStore } from '../stores/player'
 import { useSettingsStore } from '../stores/settings'
 import { useFavoritesStore } from '../stores/favorites'
+import SidebarIcon from './SidebarIcon.vue'
 import { useLibraryStore } from '../stores/library'
 import { useFavorite } from '../composables/useFavorite'
 import { authedUrl } from '../api'
@@ -465,13 +470,21 @@ function fmt(t: number): string {
   flex-wrap: wrap;
   gap: 6px;
 }
+/* 与详情页 el-tag 保持一致的标签样式 */
 .fs-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
   font-size: 12px;
-  padding: 3px 10px;
-  border-radius: 999px;
   /* 与媒体库卡片 / 详情页同一套「类型标签」配色（可在设置里改） */
   background: var(--tag-genre-bg);
   color: var(--tag-genre-fg);
+  transition: background var(--anim-duration), color var(--anim-duration);
+}
+.fs-chip.favable {
+  padding-right: 0;
 }
 .fs-chip.chip-actor {
   background: var(--tag-actor-bg);
@@ -487,9 +500,60 @@ function fmt(t: number): string {
   background: var(--accent);
   color: var(--accent-fg);
 }
-/* 标签内的收藏 +/− 号 */
+/* 播放页收藏按钮的五角星 */
+.fs-fav-icon {
+  width: 14px;
+  height: 14px;
+  margin-right: 3px;
+  vertical-align: -2px;
+  flex-shrink: 0;
+}
+.fs-fav-icon.active {
+  fill: currentColor;
+}
+/* 标签内的收藏 +/−：右侧正方形区域，左边用渐隐分割线隔开 */
 .fav-toggle {
-  margin-left: 4px;
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex-shrink: 0;
+  font-weight: 700;
+  cursor: pointer;
+}
+.fav-toggle::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 62%;
+  transform: translateY(-50%);
+  background: linear-gradient(
+    180deg,
+    transparent,
+    currentColor 35%,
+    currentColor 65%,
+    transparent
+  );
+  opacity: 0.4;
+}
+/* 社团后的方形 +/- 标签：主题色小正方形 */
+.fs-fav-tag {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: 1;
   font-weight: 700;
   cursor: pointer;
 }
