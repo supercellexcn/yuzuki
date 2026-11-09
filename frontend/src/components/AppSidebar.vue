@@ -70,24 +70,30 @@
     <div class="sidebar-bottom">
       <div ref="userWrapRef" class="sidebar-user-wrap">
         <button
+          ref="userBtnRef"
           type="button"
           class="sidebar-item sidebar-user-btn"
           :class="{ open: menuOpen }"
           :title="collapsed ? auth.user?.username : undefined"
-          @click="menuOpen = !menuOpen"
+          @click="toggleMenu"
         >
           <span class="avatar">{{ initial }}</span>
           <span class="sidebar-label user-name">{{ auth.user?.username }}</span>
-          <span class="caret">▾</span>
+          <span class="caret">▸</span>
         </button>
-        <!-- 用户菜单：从侧边栏右侧弹出；点击外部区域关闭 -->
-        <Transition name="user-menu">
-          <div v-if="menuOpen" class="sidebar-user-menu">
-            <button class="user-menu-item" @click="onCommand('change-password')">修改密码</button>
-            <div class="user-menu-divider" />
-            <button class="user-menu-item danger" @click="onCommand('logout')">退出登录</button>
-          </div>
-        </Transition>
+        <!--
+          用户菜单：挂到 body 上。侧栏本身带 backdrop-filter，会形成新的背景根，
+          弹层留在侧栏内部时 backdrop-filter 只能模糊到侧栏自己的底色（看起来没有毛玻璃）。
+        -->
+        <Teleport to="body">
+          <Transition name="user-menu">
+            <div v-if="menuOpen" ref="userMenuRef" class="sidebar-user-menu" :style="menuStyle">
+              <button class="user-menu-item" @click="onCommand('change-password')">修改密码</button>
+              <div class="user-menu-divider" />
+              <button class="user-menu-item danger" @click="onCommand('logout')">退出登录</button>
+            </div>
+          </Transition>
+        </Teleport>
       </div>
 
       <!-- 管理功能仅桌面端提供（移动端由路由守卫拦截 /admin） -->
@@ -128,7 +134,7 @@ import FilterMenu from './FilterMenu.vue'
 import SidebarIcon from './SidebarIcon.vue'
 import SiteIcon from './SiteIcon.vue'
 
-defineProps<{ collapsed: boolean }>()
+const props = defineProps<{ collapsed: boolean }>()
 const emit = defineEmits<{ (e: 'navigate'): void }>()
 
 const route = useRoute()
@@ -186,15 +192,57 @@ watch(
 
 // ---- 用户菜单 ----
 const userWrapRef = ref<HTMLElement | null>(null)
+const userBtnRef = ref<HTMLElement | null>(null)
+const userMenuRef = ref<HTMLElement | null>(null)
 const menuOpen = ref(false)
+/** 弹层渲染到 body 后没有侧栏做定位父级，按按钮的实际位置用 fixed 摆放 */
+const menuStyle = ref<Record<string, string>>({})
+
+function placeMenu() {
+  const btn = userBtnRef.value
+  if (!btn) return
+  const r = btn.getBoundingClientRect()
+  if (isMobile.value) {
+    menuStyle.value = {
+      left: `${r.left}px`,
+      width: `${r.width}px`,
+      bottom: `${window.innerHeight - r.top + 6}px`,
+    }
+  } else {
+    menuStyle.value = {
+      left: `${r.right + 8}px`,
+      bottom: `${window.innerHeight - r.bottom}px`,
+    }
+  }
+}
+
+function toggleMenu() {
+  if (!menuOpen.value) placeMenu()
+  menuOpen.value = !menuOpen.value
+}
+
+// 窗口尺寸或侧栏收起状态变化时按钮会移位，直接收起菜单，避免悬浮在错误位置
+function closeMenu() {
+  menuOpen.value = false
+}
+watch(() => props.collapsed, closeMenu)
+
 function onGlobalPointerDown(e: PointerEvent) {
   if (!menuOpen.value) return
   const wrap = userWrapRef.value
+  const menu = userMenuRef.value
   if (wrap && e.target instanceof Node && wrap.contains(e.target)) return
+  if (menu && e.target instanceof Node && menu.contains(e.target)) return
   menuOpen.value = false
 }
-onMounted(() => window.addEventListener('pointerdown', onGlobalPointerDown, true))
-onUnmounted(() => window.removeEventListener('pointerdown', onGlobalPointerDown, true))
+onMounted(() => {
+  window.addEventListener('pointerdown', onGlobalPointerDown, true)
+  window.addEventListener('resize', closeMenu)
+})
+onUnmounted(() => {
+  window.removeEventListener('pointerdown', onGlobalPointerDown, true)
+  window.removeEventListener('resize', closeMenu)
+})
 
 function onNavigate() {
   menuOpen.value = false
@@ -307,13 +355,13 @@ function onCommand(cmd: string) {
   font-size: 25px;
   line-height: 1;
   flex-shrink: 0;
-  transform: rotate(0deg);
+  transform: rotate(180deg);
   transition: transform var(--anim-duration) ease,
     opacity calc(var(--anim-duration) * 0.65) ease;
 }
-/* 与侧边栏筛选条目一致：展开时三角翻转 */
+/* 菜单从侧栏右侧弹出：收起时三角指向内部，展开后指向外部（与筛选条目一致） */
 .sidebar-user-btn.open .caret {
-  transform: rotate(180deg);
+  transform: rotate(0deg);
 }
 .sidebar.collapsed .caret {
   opacity: 0;
@@ -324,11 +372,9 @@ function onCommand(cmd: string) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 用户菜单从侧边栏右侧弹出（左 → 右），底边与按钮对齐 */
+/* 用户菜单从侧边栏右侧弹出（左 → 右），底边与按钮对齐；位置由 placeMenu 实时计算 */
 .sidebar-user-menu {
-  position: absolute;
-  left: calc(100% + 8px);
-  bottom: 0;
+  position: fixed;
   min-width: 140px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -365,9 +411,6 @@ function onCommand(cmd: string) {
     background: rgb(var(--panel-rgb));
   }
   .sidebar-user-menu {
-    left: 0;
-    right: 0;
-    bottom: calc(100% + 6px);
     min-width: 0;
     transform-origin: center bottom;
   }
