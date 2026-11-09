@@ -455,6 +455,24 @@ html.has-acrylic .el-select__popper {
 html.has-acrylic .el-select__popper .el-popper__arrow::before {
   background-color: var(--panel);
 }
+/*
+ * 弹出层文字按面板色自动取反色（同管理页表格的做法）：EP 默认是浅色主题的深灰
+ * 文字，压在深色玻璃上看不清。只改文字节点本身 —— 弹出层里的输入框 / 按钮仍是
+ * 半透明白底玻璃，EP 默认深色文字在它们上面才是可读的，不能跟着反转。
+ */
+html.has-acrylic .el-dialog__title,
+html.has-acrylic .el-dialog__body,
+html.has-acrylic .el-message-box__title,
+html.has-acrylic .el-message-box__message,
+html.has-acrylic .el-message__content,
+html.has-acrylic .el-select-dropdown__item {
+  color: var(--panel-fg);
+}
+/* 下拉选项的选中项仍用强调色高亮（上面的规则特异性更高，会盖掉 EP 原有的选中色） */
+html.has-acrylic .el-select-dropdown__item.selected,
+html.has-acrylic .el-select-dropdown__item.is-selected {
+  color: var(--el-color-primary);
+}
 * {
   box-sizing: border-box;
 }
