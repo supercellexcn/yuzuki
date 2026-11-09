@@ -407,53 +407,96 @@ html.has-tag-acrylic .work-card .chip-actor {
 }
 /*
  * ---- 液态玻璃：Element Plus 控件与弹出层 ----
- * 控件（输入框 / 下拉 / 按钮）体量小，用更轻一档的标签级模糊，底色仍是
- * useAppearance 下发的半透明 --el-fill-color-blank，这里只叠加高光渐变成玻璃质感。
- * 顶栏搜索胶囊已自带底色与圆角，内层输入框不重复叠加。
+ * 按 Apple Liquid Glass 的三层结构实现：
+ *   ① 半透明底色 + backdrop-filter 模糊/提饱和，让后景透出并折射；
+ *   ② 多段白色高光渐变，形成玻璃厚度与左上受光；
+ *   ③ 1px 内侧高光描边 + 底部暗边 + 柔和外投影，模拟边缘折射与悬浮。
+ * 控件体量小，用标签级模糊（更轻）；弹出层体量大，用面板级模糊（更强）。
+ * 面板或标签任一模糊开启即生效；顶栏搜索胶囊已自带底色与圆角，内层输入框不重复叠加。
  */
-html.has-acrylic .el-input__wrapper,
-html.has-acrylic .el-select__wrapper,
-html.has-acrylic .el-button {
+html:is(.has-acrylic, .has-tag-acrylic) .el-input__wrapper,
+html:is(.has-acrylic, .has-tag-acrylic) .el-select__wrapper,
+html:is(.has-acrylic, .has-tag-acrylic) .el-button {
   -webkit-backdrop-filter: var(--tag-acrylic-filter);
   backdrop-filter: var(--tag-acrylic-filter);
   background-image: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.07),
-    rgba(255, 255, 255, 0) 45%,
-    rgba(255, 255, 255, 0.03)
+    145deg,
+    rgba(255, 255, 255, 0.26) 0%,
+    rgba(255, 255, 255, 0.07) 30%,
+    rgba(255, 255, 255, 0.02) 62%,
+    rgba(255, 255, 255, 0.12) 100%
   );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.07),
+    0 1px 1px rgba(0, 0, 0, 0.1),
+    0 6px 16px rgba(0, 0, 0, 0.16);
 }
-html.has-acrylic .topbar-controls .el-input__wrapper {
+/* 悬停 / 聚焦：保留 EP 的主题色焦点描边，否则上面的 box-shadow 会盖掉焦点提示 */
+html:is(.has-acrylic, .has-tag-acrylic) .el-input__wrapper:hover {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 6px 16px rgba(0, 0, 0, 0.16);
+}
+html:is(.has-acrylic, .has-tag-acrylic) .el-input__wrapper.is-focus,
+html:is(.has-acrylic, .has-tag-acrylic) .el-select__wrapper.is-focused {
+  box-shadow:
+    inset 0 0 0 1px var(--el-color-primary),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 6px 16px rgba(0, 0, 0, 0.16);
+}
+html:is(.has-acrylic, .has-tag-acrylic) .topbar-controls .el-input__wrapper {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   background-image: none;
+  box-shadow: none;
 }
 /*
- * 弹出层（下拉列表 / 对话框 / 消息框 / 提示条）teleport 到 body 下，
- * 只能用全局选择器覆盖；模糊跟随面板强度，底色换成半透明面板色才能透出毛玻璃。
+ * 弹出层（下拉列表 / 对话框 / 消息框 / 通知 / 抽屉 / 各类 popper）teleport 到 body 下，
+ * 只能用全局选择器覆盖；底色与 EP 弹层变量一起换成半透明面板色，内层才能透出毛玻璃。
+ * 深色 tooltip 保持原样，避免小气泡也付合成层代价。
  */
-html.has-acrylic .el-select__popper,
+html.has-acrylic .el-popper:not(.is-dark),
 html.has-acrylic .el-dialog,
+html.has-acrylic .el-drawer,
 html.has-acrylic .el-message-box,
-html.has-acrylic .el-message {
+html.has-acrylic .el-message,
+html.has-acrylic .el-notification {
   -webkit-backdrop-filter: var(--acrylic-filter);
   backdrop-filter: var(--acrylic-filter);
   background-color: var(--panel);
   background-image: linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.07),
-    rgba(255, 255, 255, 0) 45%,
-    rgba(255, 255, 255, 0.03)
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0.03) 38%,
+    rgba(255, 255, 255, 0) 62%,
+    rgba(255, 255, 255, 0.06) 100%
   );
-}
-/* 下拉列表：箭头底色跟随面板；选项 hover 用半透明叠加，避免不透明色块盖住毛玻璃 */
-html.has-acrylic .el-select__popper {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+    0 2px 8px rgba(0, 0, 0, 0.25),
+    0 18px 48px rgba(0, 0, 0, 0.45);
+  /* 弹层内部的下拉 / 面板底色跟随玻璃，避免露出一块不透明浅色 */
   --el-bg-color-overlay: var(--panel);
   --el-fill-color-light: rgba(255, 255, 255, 0.08);
   --el-fill-color-hover: rgba(255, 255, 255, 0.12);
 }
-html.has-acrylic .el-select__popper .el-popper__arrow::before {
+/* 对话框 / 消息框用更大的圆角，接近苹果面板的形态 */
+html.has-acrylic .el-dialog,
+html.has-acrylic .el-message-box {
+  border-radius: 20px;
+}
+html.has-acrylic .el-drawer {
+  border-radius: 20px 0 0 20px;
+}
+/* popper 箭头跟随玻璃面板色，避免露出一块不透明浅色三角 */
+html.has-acrylic .el-popper:not(.is-dark) .el-popper__arrow::before {
   background-color: var(--panel);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 /*
  * 弹出层文字按面板色自动取反色（同管理页表格的做法）：EP 默认是浅色主题的深灰
@@ -465,12 +508,17 @@ html.has-acrylic .el-dialog__body,
 html.has-acrylic .el-message-box__title,
 html.has-acrylic .el-message-box__message,
 html.has-acrylic .el-message__content,
-html.has-acrylic .el-select-dropdown__item {
+html.has-acrylic .el-notification__title,
+html.has-acrylic .el-notification__content,
+html.has-acrylic .el-select-dropdown__item,
+html.has-acrylic .el-dropdown-menu__item {
   color: var(--panel-fg);
 }
-/* 下拉选项的选中项仍用强调色高亮（上面的规则特异性更高，会盖掉 EP 原有的选中色） */
+/* 选中 / 悬停项仍用强调色高亮（上面的规则特异性更高，会盖掉 EP 原有的强调色） */
 html.has-acrylic .el-select-dropdown__item.selected,
-html.has-acrylic .el-select-dropdown__item.is-selected {
+html.has-acrylic .el-select-dropdown__item.is-selected,
+html.has-acrylic .el-dropdown-menu__item:not(.is-disabled):hover,
+html.has-acrylic .el-dropdown-menu__item:not(.is-disabled):focus {
   color: var(--el-color-primary);
 }
 * {
