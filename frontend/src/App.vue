@@ -405,6 +405,56 @@ html.has-tag-acrylic .work-card .chip-actor {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
+/*
+ * ---- 液态玻璃：Element Plus 控件与弹出层 ----
+ * 控件（输入框 / 下拉 / 按钮）体量小，用更轻一档的标签级模糊，底色仍是
+ * useAppearance 下发的半透明 --el-fill-color-blank，这里只叠加高光渐变成玻璃质感。
+ * 顶栏搜索胶囊已自带底色与圆角，内层输入框不重复叠加。
+ */
+html.has-acrylic .el-input__wrapper,
+html.has-acrylic .el-select__wrapper,
+html.has-acrylic .el-button {
+  -webkit-backdrop-filter: var(--tag-acrylic-filter);
+  backdrop-filter: var(--tag-acrylic-filter);
+  background-image: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.07),
+    rgba(255, 255, 255, 0) 45%,
+    rgba(255, 255, 255, 0.03)
+  );
+}
+html.has-acrylic .topbar-controls .el-input__wrapper {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-image: none;
+}
+/*
+ * 弹出层（下拉列表 / 对话框 / 消息框 / 提示条）teleport 到 body 下，
+ * 只能用全局选择器覆盖；模糊跟随面板强度，底色换成半透明面板色才能透出毛玻璃。
+ */
+html.has-acrylic .el-select__popper,
+html.has-acrylic .el-dialog,
+html.has-acrylic .el-message-box,
+html.has-acrylic .el-message {
+  -webkit-backdrop-filter: var(--acrylic-filter);
+  backdrop-filter: var(--acrylic-filter);
+  background-color: var(--panel);
+  background-image: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.07),
+    rgba(255, 255, 255, 0) 45%,
+    rgba(255, 255, 255, 0.03)
+  );
+}
+/* 下拉列表：箭头底色跟随面板；选项 hover 用半透明叠加，避免不透明色块盖住毛玻璃 */
+html.has-acrylic .el-select__popper {
+  --el-bg-color-overlay: var(--panel);
+  --el-fill-color-light: rgba(255, 255, 255, 0.08);
+  --el-fill-color-hover: rgba(255, 255, 255, 0.12);
+}
+html.has-acrylic .el-select__popper .el-popper__arrow::before {
+  background-color: var(--panel);
+}
 * {
   box-sizing: border-box;
 }
