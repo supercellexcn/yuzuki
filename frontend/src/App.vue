@@ -286,6 +286,8 @@ function scrollToTop() {
   --panel-rgb: 27, 30, 36;
   --panel-alpha: 1;
   --panel: rgba(var(--panel-rgb), var(--panel-alpha));
+  /* 面板上的文字色：由 useAppearance 按实际面板色取对比度更高的黑/白 */
+  --panel-fg: #e8ebf0;
   --border: #2a2e37;
   --text: #e8ebf0;
   --muted: #9aa3b0;
@@ -375,6 +377,9 @@ html.has-acrylic .el-table {
   border-radius: var(--el-border-radius-base);
   overflow: hidden;
   background-color: var(--panel);
+  /* EP 处于浅色主题，文字是深灰；换深色面板后按面板色取反，否则深底深字看不清 */
+  --el-table-text-color: var(--panel-fg);
+  --el-table-header-text-color: var(--panel-fg);
   --el-table-tr-bg-color: transparent;
   --el-table-header-bg-color: transparent;
   /* 悬停态改半透明叠加，避免一块不透明色盖住毛玻璃 */
