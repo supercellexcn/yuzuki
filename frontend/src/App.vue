@@ -355,7 +355,9 @@ html.has-acrylic .card:not(.sub-card),
 html.has-acrylic .login-card,
 html.has-acrylic .file-list,
 html.has-acrylic .save-toast,
-html.has-acrylic .back-btn {
+html.has-acrylic .back-btn,
+/* 管理页表格：底色/模糊由表格根节点统一给出，才能整块形成毛玻璃 */
+html.has-acrylic .el-table {
   -webkit-backdrop-filter: var(--acrylic-filter);
   backdrop-filter: var(--acrylic-filter);
   background-image: linear-gradient(
@@ -365,7 +367,21 @@ html.has-acrylic .back-btn {
     rgba(255, 255, 255, 0.03)
   );
 }
-/* 全屏播放器的整屏蒙版：底色不透明度跟随面板透明度，模糊跟随面板模糊 */
+/*
+ * 管理页表格：圆角与全局控件一致；行/表头背景置为透明，底色统一由根节点
+ * 用面板色给出（固定列、表头是独立的单元格副本，各自设底色会在毛玻璃上透出色块）。
+ */
+.el-table {
+  border-radius: var(--el-border-radius-base);
+  overflow: hidden;
+  background-color: var(--panel);
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: transparent;
+  /* 悬停态改半透明叠加，避免一块不透明色盖住毛玻璃 */
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.06);
+}
+/*
+ * 全屏播放器的整屏蒙版：底色不透明度跟随面板透明度，模糊跟随面板模糊 */
 html.has-acrylic .fs-scrim {
   -webkit-backdrop-filter: var(--acrylic-filter);
   backdrop-filter: var(--acrylic-filter);
