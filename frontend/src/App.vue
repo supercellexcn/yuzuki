@@ -248,12 +248,43 @@ function closePoppersOnPageScroll() {
   document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, detail: 1 }))
   document.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
 }
+
+/**
+ * 一次连续滚动只关闭一次弹层：原实现每个 scroll 事件都派发 3 个合成鼠标事件，
+ * 会反复唤醒全站 click-outside 监听器，是滚动掉帧的主要来源。
+ * 滚动期间给 <html> 挂 is-scrolling，临时去掉卡片的 backdrop-filter 合成层，
+ * 停止滚动 160ms 后恢复，静止状态视觉不变。
+ */
+let poppersClosed = false
+let scrollIdleTimer: ReturnType<typeof setTimeout> | undefined
+function onPageScroll() {
+  const root = document.documentElement
+  root.classList.add('is-scrolling')
+  if (!poppersClosed) {
+    poppersClosed = true
+    closePoppersOnPageScroll()
+  }
+  if (scrollIdleTimer) clearTimeout(scrollIdleTimer)
+  scrollIdleTimer = setTimeout(() => {
+    scrollIdleTimer = undefined
+    poppersClosed = false
+    root.classList.remove('is-scrolling')
+  }, 160)
+}
+/** 滚动手势中途用户又打开了弹层：真实按下时复位，后续滚动仍能把它关掉 */
+function onUserPointerDown(e: PointerEvent) {
+  if (e.isTrusted) poppersClosed = false
+}
 onMounted(() => {
   // 页面滚动关闭 element-plus 弹层
-  window.addEventListener('scroll', closePoppersOnPageScroll, { passive: true })
+  window.addEventListener('scroll', onPageScroll, { passive: true })
+  document.addEventListener('pointerdown', onUserPointerDown, true)
 })
 onUnmounted(() => {
-  window.removeEventListener('scroll', closePoppersOnPageScroll)
+  window.removeEventListener('scroll', onPageScroll)
+  document.removeEventListener('pointerdown', onUserPointerDown, true)
+  if (scrollIdleTimer) clearTimeout(scrollIdleTimer)
+  document.documentElement.classList.remove('is-scrolling')
   document.documentElement.classList.remove('drawer-open')
 })
 
@@ -404,6 +435,19 @@ html.has-tag-acrylic .work-card .cover-tag,
 html.has-tag-acrylic .work-card .chip-actor {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+/*
+ * 滚动期间降级作品卡片：backdrop-filter 让每张卡片都成为独立合成层，滚动时逐帧
+ * 重采样背后内容，列表越滚越长开销线性上升。is-scrolling 由 onPageScroll 在滚动
+ * 空闲 160ms 后移除，停下即恢复毛玻璃；同时关掉过渡与 hover 位移避免滚动中反复起动画。
+ */
+html.is-scrolling .work-card {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition: none;
+}
+html.is-scrolling .work-card:hover {
+  transform: none;
 }
 /*
  * ---- 液态玻璃：Element Plus 控件与弹出层 ----

@@ -6,7 +6,7 @@
     @click="go"
   >
     <div class="cover">
-      <img v-if="work.cover_url" :src="authedUrl(work.cover_url)" :alt="work.title" loading="lazy" />
+      <img v-if="coverSrc" :src="coverSrc" :alt="work.title" loading="lazy" decoding="async" />
       <div v-else class="cover-placeholder">{{ work.rj_code }}</div>
       <!-- 封面左上角：星标收藏 -->
       <FavoriteStar :rj="work.rj_code" />
@@ -133,6 +133,7 @@ import { authedUrl } from '../api'
 import { CUSTOM_TAG } from '../api/types'
 import type { Work } from '../api/types'
 import { useViewMode } from '../composables/useViewMode'
+import { useAuthStore } from '../stores/auth'
 import FavoriteStar from './FavoriteStar.vue'
 
 const props = defineProps<{
@@ -149,7 +150,16 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const { imageOnly } = useViewMode()
+const auth = useAuthStore()
 const isHistory = computed(() => !!props.history)
+/**
+ * 封面 URL 只在作品数据 / 登录态变化时计算一次，避免每次渲染都读 localStorage 并拼串。
+ * 依赖 auth.token：重新登录后自动换用新 token，不会留下旧 token 的失效图片地址。
+ */
+const coverSrc = computed(() => {
+  void auth.token
+  return authedUrl(props.work.cover_url)
+})
 
 const FLAME_PATH =
   'M12 2c1.2 4.2-2.8 5.4-2.8 9.2a2.8 2.8 0 0 0 5.6 0c0-1.6-1-2.7-1-4.2 2.2 1.1 4.2 3.7 4.2 7a6 6 0 0 1-12 0C6 9.4 9 6.4 12 2Z'

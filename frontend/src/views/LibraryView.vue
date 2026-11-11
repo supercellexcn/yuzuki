@@ -30,6 +30,7 @@
       <WorkCard
         v-for="w in displayItems"
         :key="w.id"
+        v-memo="[w.id, store.revision]"
         :work="w"
         @select-circle="(v) => addCond('circle', v)"
         @select-series="(v) => addCond('series', v)"
@@ -120,12 +121,17 @@ function tagType(t: FilterCondType): 'success' | 'primary' | 'warning' | 'info' 
   return t === 'circle' ? 'success' : t === 'series' ? 'primary' : t === 'actor' ? 'warning' : 'info'
 }
 
+/** 按帧合并滚动处理：避免每个 scroll 事件都写 Pinia state、读 scrollHeight 触发同步布局。 */
+let scrollRaf = 0
 function onScroll() {
-  store.rememberScroll(window.scrollY)
-  const doc = document.documentElement
-  if (window.innerHeight + window.scrollY >= doc.scrollHeight - 300 && !store.randomMode) {
-    store.loadMore()
-  }
+  if (scrollRaf) return
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = 0
+    const doc = document.documentElement
+    if (window.innerHeight + window.scrollY >= doc.scrollHeight - 300 && !store.randomMode) {
+      void store.loadMore()
+    }
+  })
 }
 
 /** 页面当前是否处于激活（keep-alive）状态；失活期间不做自动填充。 */
@@ -209,6 +215,10 @@ function onDeactivate() {
   store.flushPrefs()
   window.removeEventListener('scroll', onScroll)
   window.removeEventListener('resize', onResize)
+  if (scrollRaf) {
+    cancelAnimationFrame(scrollRaf)
+    scrollRaf = 0
+  }
 }
 onActivated(onActivate)
 onDeactivated(onDeactivate)

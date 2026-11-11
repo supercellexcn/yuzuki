@@ -30,6 +30,8 @@ export const useLibraryStore = defineStore('library', {
     randomLoading: false,
     /** 同一次会话内记住的滚动位置：从播放器返回媒体库时原地恢复（不落库） */
     scrollTop: 0,
+    /** 列表整体替换时递增，供 LibraryView 的 v-memo 失效；追加分页时不递增 */
+    revision: 0,
   }),
   getters: {
     hasFilter(state): boolean {
@@ -66,7 +68,13 @@ export const useLibraryStore = defineStore('library', {
           page: this.page,
           pageSize: this.pageSize,
         })
-        this.items = mode === 'append' ? [...this.items, ...res.items] : res.items
+        if (mode === 'append') {
+          // 增量追加：不重建整个数组，配合 v-memo 跳过已有卡片的 patch
+          this.items.push(...res.items)
+        } else {
+          this.items = res.items
+          this.revision += 1
+        }
         this.total = res.total
         this.loaded = true
       } finally {
@@ -154,6 +162,8 @@ export const useLibraryStore = defineStore('library', {
       try {
         const res = await getRandomWorks({ q: this.q || undefined, cond: this.condParams, count: 20 })
         this.randomItems = res.items
+        // 切换随机推荐时让 v-memo 全部失效，避免复用上一份列表的卡片数据
+        this.revision += 1
         this.randomMode = true
       } finally {
         this.randomLoading = false
@@ -202,6 +212,7 @@ export const useLibraryStore = defineStore('library', {
       this.randomMode = false
       this.randomItems = []
       this.scrollTop = 0
+      this.revision += 1
     },
   },
 })
