@@ -210,13 +210,10 @@ function historyMeta(p: PlayRecord) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 900px;
 }
-/* 卡片模式沿用媒体库的整行宽度 */
-.history.cards {
-  max-width: none;
-}
+/* 标题栏不受列表宽度限制：列表 / 卡片两种视图都铺满整行，切换按钮固定在页面右端 */
 .head {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -235,6 +232,8 @@ function historyMeta(p: PlayRecord) {
 .list {
   display: flex;
   flex-direction: column;
+  /* 列表内容保持原来的 900px 宽度，不随标题栏一起铺满 */
+  max-width: 900px;
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
@@ -306,6 +305,11 @@ function historyMeta(p: PlayRecord) {
   /* 与媒体库一致：卡片尺寸由设置决定 */
   grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
   gap: 16px;
+}
+/* 列表模式下空状态 / 结束提示沿用 900px 宽度；卡片模式仍整行居中 */
+.history:not(.cards) .empty,
+.history:not(.cards) .end-tip {
+  max-width: 900px;
 }
 .empty {
   padding: 60px 0;
