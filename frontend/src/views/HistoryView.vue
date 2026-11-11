@@ -54,7 +54,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { getPlays, authedUrl } from '../api'
 import type { PlayRecord } from '../api/types'
@@ -86,6 +86,8 @@ watch(view, (v) => {
   } catch {
     /* 隐私模式下写入失败，忽略 */
   }
+  // 列表 / 卡片切换会改变页面高度，切回卡片时可能又不足一屏
+  void fillViewport()
 })
 
 const hasMore = computed(() => total.value > items.value.length)
@@ -115,11 +117,54 @@ function onScroll() {
   if (window.innerHeight + window.scrollY >= doc.scrollHeight - 300) load()
 }
 
+/**
+ * 大屏 + 卡片模式下第一页可能整页放得下：没有滚动条就不会派发 scroll 事件，
+ * 「滚动加载更多」看起来失效。每次渲染后检查滚动余量，不足就继续补页，
+ * 直到页面可滚动或数据取完；串行执行并设页数上限，接口失败时立即停，避免空转。
+ */
+let filling = false
+async function fillViewport() {
+  if (filling) return
+  filling = true
+  try {
+    for (let i = 0; i < 50; i++) {
+      if (!loaded.value || !hasMore.value) return
+      await nextTick()
+      // 与 onScroll 的触发线一致：余量不足 300px 时滚到底也不会再触发加载
+      if (document.documentElement.scrollHeight - window.innerHeight > 300) return
+      const before = items.value.length
+      await load()
+      await nextTick()
+      // 没拿到新数据（请求失败 / 并发保护提前返回）就停，避免死循环
+      if (items.value.length === before) return
+    }
+  } finally {
+    filling = false
+  }
+}
+
+// 每次请求结束后校准一次；flush: 'post' 保证读到的是新列表渲染后的布局
+watch(
+  loading,
+  (v) => {
+    if (!v) void fillViewport()
+  },
+  { flush: 'post' }
+)
+
+function onResize() {
+  void fillViewport()
+}
+
 onMounted(() => {
   load()
   window.addEventListener('scroll', onScroll, { passive: true })
+  window.addEventListener('resize', onResize, { passive: true })
 })
-onUnmounted(() => window.removeEventListener('scroll', onScroll))
+onUnmounted(() => {
+  window.removeEventListener('scroll', onScroll)
+  window.removeEventListener('resize', onResize)
+})
 
 function goWork(rj: string) {
   router.push({ name: 'player', params: { rj } })
