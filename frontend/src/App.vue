@@ -250,10 +250,11 @@ function closePoppersOnPageScroll() {
 }
 
 /**
- * 一次连续滚动只关闭一次弹层：原实现每个 scroll 事件都派发 3 个合成鼠标事件，
- * 会反复唤醒全站 click-outside 监听器，是滚动掉帧的主要来源。
- * 滚动期间给 <html> 挂 is-scrolling，临时去掉卡片的 backdrop-filter 合成层，
- * 停止滚动 160ms 后恢复，静止状态视觉不变。
+ * 一次交互周期只关闭一次弹层：原实现每个 scroll 事件都派发 3 个合成鼠标事件，
+ * 会反复唤醒全站 click-outside 监听器。这里只在「用户点击之后的第一段滚动」派发一次，
+ * 复位交给真实 pointerdown，避免一下一下滚轮时每下都触发一波事件造成顿挫。
+ * 滚动期间给 <html> 挂 is-scrolling，临时去掉卡片的 backdrop-filter 合成层；
+ * 空闲 2 秒后才恢复，让连续多段滚动共用同一状态，不再反复重建合成层。
  */
 let poppersClosed = false
 let scrollIdleTimer: ReturnType<typeof setTimeout> | undefined
@@ -267,11 +268,10 @@ function onPageScroll() {
   if (scrollIdleTimer) clearTimeout(scrollIdleTimer)
   scrollIdleTimer = setTimeout(() => {
     scrollIdleTimer = undefined
-    poppersClosed = false
     root.classList.remove('is-scrolling')
-  }, 160)
+  }, 2000)
 }
-/** 滚动手势中途用户又打开了弹层：真实按下时复位，后续滚动仍能把它关掉 */
+/** 真实点击复位闸门：用户新打开弹层后，下一段滚动才会再次关闭它 */
 function onUserPointerDown(e: PointerEvent) {
   if (e.isTrusted) poppersClosed = false
 }
@@ -439,7 +439,7 @@ html.has-tag-acrylic .work-card .chip-actor {
 /*
  * 滚动期间降级作品卡片：backdrop-filter 让每张卡片都成为独立合成层，滚动时逐帧
  * 重采样背后内容，列表越滚越长开销线性上升。is-scrolling 由 onPageScroll 在滚动
- * 空闲 160ms 后移除，停下即恢复毛玻璃；同时关掉过渡与 hover 位移避免滚动中反复起动画。
+ * 空闲 2 秒后移除，避免逐次滚轮反复重建合成层；同时关掉过渡与 hover 位移避免滚动中反复起动画。
  */
 html.is-scrolling .work-card {
   -webkit-backdrop-filter: none;
