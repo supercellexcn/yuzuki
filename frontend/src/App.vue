@@ -253,31 +253,14 @@ function closePoppersOnPageScroll() {
  * 一次交互周期只关闭一次弹层：原实现每个 scroll 事件都派发 3 个合成鼠标事件，
  * 会反复唤醒全站 click-outside 监听器。这里只在「用户点击之后的第一段滚动」派发一次，
  * 复位交给真实 pointerdown，避免一下一下滚轮时每下都触发一波事件造成顿挫。
- * 卡片的毛玻璃不再随滚动开关：改由 WorkCard 按视口距离分配合成层（card-near）。
  */
 let poppersClosed = false
-/** 滚动停止多久后撤掉 is-scrolling（毫秒） */
-const SCROLL_IDLE_MS = 160
-let scrollIdleTimer = 0
 
 function onPageScroll() {
   if (!poppersClosed) {
     poppersClosed = true
     closePoppersOnPageScroll()
   }
-  /*
-   * 滚动期间给 <html> 挂 is-scrolling：滚轮滚动时指针不动，卡片从指针下方经过会
-   * 反复进出 :hover，触发卡片的 transform 过渡，合成层随之反复创建 / 销毁，
-   * 滚动时间线上就是周期性顿挫。这里只在滚动中抑制 hover 位移与过渡，
-   * 边框高亮与毛玻璃都不动，停止 160ms 后自动恢复 —— 静止视觉与原来完全一致。
-   */
-  const root = document.documentElement
-  if (!root.classList.contains('is-scrolling')) root.classList.add('is-scrolling')
-  if (scrollIdleTimer) clearTimeout(scrollIdleTimer)
-  scrollIdleTimer = window.setTimeout(() => {
-    scrollIdleTimer = 0
-    root.classList.remove('is-scrolling')
-  }, SCROLL_IDLE_MS)
 }
 /** 真实点击复位闸门：用户新打开弹层后，下一段滚动才会再次关闭它 */
 function onUserPointerDown(e: PointerEvent) {
@@ -291,11 +274,6 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('scroll', onPageScroll)
   document.removeEventListener('pointerdown', onUserPointerDown, true)
-  if (scrollIdleTimer) {
-    clearTimeout(scrollIdleTimer)
-    scrollIdleTimer = 0
-  }
-  document.documentElement.classList.remove('is-scrolling')
   document.documentElement.classList.remove('drawer-open')
 })
 
@@ -391,6 +369,7 @@ html.has-acrylic .sidebar,
 html.has-acrylic .sidebar-user-menu,
 html.has-acrylic .bottom-player,
 html.has-acrylic .mobile-dock,
+html.has-acrylic .work-card,
 html.has-acrylic .pl-panel,
 html.has-acrylic .header,
 /* 系统设置里的子卡片是透明分隔行，叠加 backdrop-filter 会在壁纸上透出一块色斑 */
@@ -445,48 +424,6 @@ html.has-tag-acrylic .work-card .cover-tag,
 html.has-tag-acrylic .work-card .chip-actor {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-}
-/*
- * 作品卡片的毛玻璃有两种承载方式，底色与高光完全一致：
- *  ① 未接入统一层的页面（如播放页的推荐位，卡片数量少）：由 card-near 让视口附近
- *     的卡片各自持有 backdrop-filter，合成层数量有限。
- *  ② 已接入 CardGlassLayer 的容器（.card-glass-host：媒体库 / 收藏 / 历史）：
- *     卡片自身不再持有 backdrop-filter，模糊由容器内唯一的固定层负责裁剪显示，
- *     滚动时只更新裁剪矩形、不重新采样，成本与卡片数量无关。
- * 两种方式都不会出现「滚动时模糊消失 / 停下再恢复」的跳变。
- */
-html.has-acrylic .work-card.card-near,
-html.has-acrylic .card-glass-host .work-card {
-  background-image: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.07),
-    rgba(255, 255, 255, 0) 45%,
-    rgba(255, 255, 255, 0.03)
-  );
-}
-html.has-acrylic .work-card.card-near {
-  -webkit-backdrop-filter: var(--acrylic-filter);
-  backdrop-filter: var(--acrylic-filter);
-}
-html.has-acrylic .card-glass-host .work-card {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-/*
- * 滚动期间的悬停抑制（is-scrolling 由 App.vue 的 onPageScroll 维护，停止 160ms 后撤掉）：
- * 滚轮滚动时指针不动、卡片从指针下方经过，会反复进出 :hover 触发 transform 过渡，
- * 合成层随之反复创建 / 销毁，就是滚动时的周期性顿挫。这里只去掉位移与过渡，
- * 边框高亮仍保留，毛玻璃与静止时的外观完全不变。
- */
-html.is-scrolling .work-card {
-  transition: border-color var(--anim-duration);
-}
-html.is-scrolling .work-card:hover {
-  transform: none;
-}
-html.is-scrolling .work-card .cover-tag,
-html.is-scrolling .work-card .chip {
-  transition: none;
 }
 /*
  * ---- 液态玻璃：Element Plus 控件与弹出层 ----
@@ -622,16 +559,10 @@ body::before {
   width: var(--wallpaper-w, calc(100% + 96px));
   height: var(--wallpaper-h, calc(100vh + 96px));
   z-index: -1;
-  /*
-   * 壁纸用 useAppearance 预先烘焙好的模糊位图（--wallpaper-image-blurred）：
-   * 这一层就不再是「全屏实时滤镜」—— 滚动时只是一张静态图，不参与逐帧重算。
-   * 预渲染失败（跨域污染 canvas / 老浏览器不支持 canvas filter）时两个变量都不存在，
-   * 自动回退成原来的「原图 + filter: blur()」，观感不变。
-   */
-  background-image: var(--wallpaper-image-blurred, var(--wallpaper-image));
+  background-image: var(--wallpaper-image);
   background-size: cover;
   background-position: center;
-  filter: var(--wallpaper-extra-filter, blur(var(--wallpaper-blur)));
+  filter: blur(var(--wallpaper-blur));
   pointer-events: none;
 }
 /* 全屏播放器打开时锁住底层页面滚动（否则触摸滑动会穿透去滚动背后的列表） */

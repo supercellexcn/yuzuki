@@ -199,131 +199,6 @@ function syncWallpaperSize(): void {
   const root = document.documentElement
   root.style.setProperty('--wallpaper-w', `${lastWallpaperW + 96}px`) // +96 = 外扩一圈的余量
   root.style.setProperty('--wallpaper-h', `${maxWallpaperH + 96}px`)
-  // 取景尺寸变了：旧的预渲染图比例不对，先回退实时模糊，再按新尺寸重新烘焙
-  resetWallpaperPrefilter()
-  scheduleWallpaperPrefilter()
-}
-
-/*
- * ---- 壁纸模糊预渲染 ----
- *
- * body::before 是一个铺满视口（+96px）的固定层，原来靠 `filter: blur()` 实时模糊。
- * 它是页面上唯一「全屏 + 滤镜」的元素：滚动时只要被判定需要重绘，就要对整屏重算
- * 一次高斯（DPR 2 的 2K 屏约 900 万像素），成本极高且与视口面积成正比 —— 表现为
- * 窗口越宽越卡、缩窄就变顺。
- *
- * 这里改成「只烘焙一次」：把原图按 cover 取景画进 canvas（大图用 1/2 分辨率，
- * 模糊本身是低频，看不出差别），用 canvas 的 blur 滤镜把模糊一起烘进像素，
- * 再作为该层的背景图。视觉与实时模糊一致，但滚动时这层只是一张静态位图，
- * 零滤镜计算。
- *
- * 任何一步失败（解码失败 / 跨域污染 canvas / 浏览器不支持 canvas filter）都
- * 静默回退到原来的 CSS blur，功能与观感不受影响。
- */
-let wallpaperPrefilterKey = ''
-let wallpaperPrefilterTimer = 0
-let wallpaperPrefilterSeq = 0
-/** 上一份「已烘焙」对应的壁纸地址与模糊半径，用来判断是否需要重做 */
-let lastWallpaperImage = ''
-let lastWallpaperBlurPx = -1
-
-/** canvas 的 filter 是否存在且真正生效（老版 Safari 会忽略它，不能拿它烘焙） */
-let canvasFilterSupported: boolean | null = null
-function supportsCanvasFilter(): boolean {
-  if (canvasFilterSupported !== null) return canvasFilterSupported
-  canvasFilterSupported = false
-  const ctx = document.createElement('canvas').getContext('2d')
-  if (ctx && 'filter' in ctx) {
-    ctx.filter = 'blur(2px)'
-    canvasFilterSupported = ctx.filter === 'blur(2px)'
-  }
-  return canvasFilterSupported
-}
-
-/** 撤掉预渲染结果 → body::before 回退到「原图 + 实时 blur」 */
-function resetWallpaperPrefilter(): void {
-  wallpaperPrefilterKey = ''
-  setVar('--wallpaper-image-blurred', '')
-  setVar('--wallpaper-extra-filter', '')
-}
-
-function scheduleWallpaperPrefilter(): void {
-  if (typeof window === 'undefined') return
-  if (wallpaperPrefilterTimer) clearTimeout(wallpaperPrefilterTimer)
-  // 防抖：拖动模糊滑块 / 连续改设置时只在停手后烘焙一次
-  wallpaperPrefilterTimer = window.setTimeout(() => {
-    wallpaperPrefilterTimer = 0
-    void buildWallpaperPrefilter()
-  }, 160)
-}
-
-async function buildWallpaperPrefilter(): Promise<void> {
-  const root = document.documentElement
-  const raw = root.style.getPropertyValue('--wallpaper-image').trim()
-  const radius = Math.round(parseFloat(root.style.getPropertyValue('--wallpaper-blur')) || 0)
-  if (!raw || raw === 'none' || radius <= 0 || !lastWallpaperW || !maxWallpaperH) {
-    resetWallpaperPrefilter()
-    return
-  }
-  if (!supportsCanvasFilter()) {
-    resetWallpaperPrefilter()
-    return
-  }
-
-  const w = lastWallpaperW + 96
-  const h = maxWallpaperH + 96
-  const key = `${raw}|${radius}|${w}x${h}`
-  if (key === wallpaperPrefilterKey) return
-
-  const seq = ++wallpaperPrefilterSeq
-  const img = new Image()
-  img.decoding = 'async'
-  img.src = raw.replace(/^url\(["']?/, '').replace(/["']?\)$/, '')
-  try {
-    await img.decode()
-  } catch {
-    if (seq === wallpaperPrefilterSeq) resetWallpaperPrefilter()
-    return
-  }
-  if (seq !== wallpaperPrefilterSeq) return
-  if (!img.naturalWidth || !img.naturalHeight) {
-    resetWallpaperPrefilter()
-    return
-  }
-
-  // 大面积（高分屏）用 1/2 分辨率烘焙：体积和显存都小一个数量级，模糊看不出差别
-  const scale = w * h > 900_000 ? 0.5 : 1
-  const cw = Math.max(1, Math.round(w * scale))
-  const ch = Math.max(1, Math.round(h * scale))
-  const canvas = document.createElement('canvas')
-  canvas.width = cw
-  canvas.height = ch
-  const ctx = canvas.getContext('2d')
-  if (!ctx) {
-    resetWallpaperPrefilter()
-    return
-  }
-  // 与 background-size: cover 完全一致的取景（canvas 宽高比 = 壁纸层宽高比）
-  const k = Math.max(cw / img.naturalWidth, ch / img.naturalHeight)
-  const dw = img.naturalWidth * k
-  const dh = img.naturalHeight * k
-  ctx.filter = `blur(${Math.max(0.5, radius * scale)}px)`
-  ctx.drawImage(img, (cw - dw) / 2, (ch - dh) / 2, dw, dh)
-  ctx.filter = 'none'
-
-  let data: string
-  try {
-    data = canvas.toDataURL('image/jpeg', 0.9)
-  } catch {
-    // 图片跨域且未带 CORS 头时 canvas 会被污染，读不出来 —— 回退实时模糊
-    if (seq === wallpaperPrefilterSeq) resetWallpaperPrefilter()
-    return
-  }
-  if (seq !== wallpaperPrefilterSeq) return
-
-  wallpaperPrefilterKey = key
-  setVar('--wallpaper-image-blurred', `url("${data}")`)
-  setVar('--wallpaper-extra-filter', 'none')
 }
 
 export function useAppearance() {
@@ -357,26 +232,12 @@ export function useAppearance() {
       hasCurrentWallpaper.value && currentWallpaperEnabled.value && getToken()
         ? wallpaperUrl(currentKind.value, wallpaperVersion.value || undefined)
         : ''
-    const wallImage = wallUrl ? `url("${wallUrl}")` : 'none'
-    root.style.setProperty('--wallpaper-image', wallImage)
+    root.style.setProperty('--wallpaper-image', wallUrl ? `url("${wallUrl}")` : 'none')
 
     // ---- 模糊：壁纸 / 面板 / 标签三层独立 ----
     const wallpaperBlur =
       wallpaperBlurPreview.value !== null ? wallpaperBlurPreview.value : s.wallpaper_blur
-    const wallpaperBlurPx = Math.round(wallpaperBlur * 0.3)
-    root.style.setProperty('--wallpaper-blur', `${wallpaperBlurPx}px`)
-
-    /*
-     * 换壁纸 / 改模糊半径时，旧的烘焙图已经不对了：先撤掉它、回退到实时 blur
-     * （这一刻视觉本来就是「新图 + 正确半径」），再防抖烘焙新的。
-     * 其他设置变化不动它 —— 否则改个主题色都要重新烘焙、白闪一下。
-     */
-    if (wallImage !== lastWallpaperImage || wallpaperBlurPx !== lastWallpaperBlurPx) {
-      lastWallpaperImage = wallImage
-      lastWallpaperBlurPx = wallpaperBlurPx
-      resetWallpaperPrefilter()
-    }
-    scheduleWallpaperPrefilter()
+    root.style.setProperty('--wallpaper-blur', `${Math.round(wallpaperBlur * 0.3)}px`)
 
     // ---- 底色不透明度：面板 / 文件列表 / 控件 ----
     // 不透明度始终生效：有壁纸时透出壁纸，没有壁纸时透出页面底色。

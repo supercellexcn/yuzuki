@@ -15,8 +15,6 @@
     <template v-else>
       <!-- 作品（默认 Tab）：复用 WorkCard，点击进播放器，点封面星标取消收藏 -->
       <div v-if="activeTab === 'work'" class="grid">
-        <!-- 卡片毛玻璃统一层：全屏只模糊一次，滚动只更新裁剪矩形 -->
-        <CardGlassLayer />
         <WorkCard v-for="w in favorites.works" :key="w.id" :work="w" />
         <div v-if="!favorites.works.length" class="empty">
           暂无收藏作品<br /><span class="hint">点击作品封面左上角的星标即可收藏</span>
@@ -82,7 +80,6 @@ import { useLibraryStore } from '../stores/library'
 import { useFavorite } from '../composables/useFavorite'
 import type { FilterCondType } from '../api/types'
 import WorkCard from '../components/WorkCard.vue'
-import CardGlassLayer from '../components/CardGlassLayer.vue'
 
 const favorites = useFavoritesStore()
 const library = useLibraryStore()

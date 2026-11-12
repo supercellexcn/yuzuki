@@ -27,12 +27,9 @@
     </div>
 
     <div v-else class="grid">
-      <!-- 卡片毛玻璃统一层：全屏只模糊一次，滚动只更新裁剪矩形（见组件内注释） -->
-      <CardGlassLayer />
       <WorkCard
         v-for="w in displayItems"
         :key="w.id"
-        v-memo="[w.id, store.revision]"
         :work="w"
         @select-circle="(v) => addCond('circle', v)"
         @select-series="(v) => addCond('series', v)"
@@ -57,7 +54,6 @@ import { useLibraryStore } from '../stores/library'
 import { useAuthStore } from '../stores/auth'
 import type { FilterCondType } from '../api/types'
 import WorkCard from '../components/WorkCard.vue'
-import CardGlassLayer from '../components/CardGlassLayer.vue'
 
 const store = useLibraryStore()
 const auth = useAuthStore()
@@ -124,17 +120,12 @@ function tagType(t: FilterCondType): 'success' | 'primary' | 'warning' | 'info' 
   return t === 'circle' ? 'success' : t === 'series' ? 'primary' : t === 'actor' ? 'warning' : 'info'
 }
 
-/** 按帧合并滚动处理：避免每个 scroll 事件都写 Pinia state、读 scrollHeight 触发同步布局。 */
-let scrollRaf = 0
 function onScroll() {
-  if (scrollRaf) return
-  scrollRaf = requestAnimationFrame(() => {
-    scrollRaf = 0
-    const doc = document.documentElement
-    if (window.innerHeight + window.scrollY >= doc.scrollHeight - 300 && !store.randomMode) {
-      void store.loadMore()
-    }
-  })
+  store.rememberScroll(window.scrollY)
+  const doc = document.documentElement
+  if (window.innerHeight + window.scrollY >= doc.scrollHeight - 300 && !store.randomMode) {
+    store.loadMore()
+  }
 }
 
 /** 页面当前是否处于激活（keep-alive）状态；失活期间不做自动填充。 */
@@ -229,10 +220,6 @@ function onDeactivate() {
   store.flushPrefs()
   window.removeEventListener('scroll', onScroll)
   window.removeEventListener('resize', onResize)
-  if (scrollRaf) {
-    cancelAnimationFrame(scrollRaf)
-    scrollRaf = 0
-  }
 }
 onActivated(onActivate)
 onDeactivated(onDeactivate)

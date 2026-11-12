@@ -1,13 +1,12 @@
 <template>
   <div
-    ref="rootEl"
     class="work-card"
-    :class="{ 'history-card': isHistory, 'card-near': near }"
+    :class="{ 'history-card': isHistory }"
     :id="'wc-' + work.id"
     @click="go"
   >
     <div class="cover">
-      <img v-if="coverSrc" :src="coverSrc" :alt="work.title" loading="lazy" decoding="async" />
+      <img v-if="work.cover_url" :src="authedUrl(work.cover_url)" :alt="work.title" loading="lazy" />
       <div v-else class="cover-placeholder">{{ work.rj_code }}</div>
       <!-- 封面左上角：星标收藏 -->
       <FavoriteStar :rj="work.rj_code" />
@@ -127,37 +126,13 @@
   </div>
 </template>
 
-<script lang="ts">
-/*
- * 所有 WorkCard 共用一个 IntersectionObserver（卡片越多越不能每张卡一个实例）：
- * 只有视口 ±1000px 内的卡片才挂 card-near、持有 backdrop-filter 合成层；
- * 离屏卡片不参与合成，合成层数量不再随分页累积增长。
- * 缓冲设在一屏以上，卡片进入视野前就已恢复模糊，不会出现「清晰一瞬」，
- * 也不再有「滚动时关掉、停下 2 秒再恢复」的跳变。
- */
-let sharedObserver: IntersectionObserver | null = null
-const nearCallbacks = new WeakMap<Element, (near: boolean) => void>()
-function getObserver() {
-  if (!sharedObserver) {
-    sharedObserver = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) nearCallbacks.get(e.target)?.(e.isIntersecting)
-      },
-      { rootMargin: '1000px' }
-    )
-  }
-  return sharedObserver
-}
-</script>
-
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { authedUrl } from '../api'
 import { CUSTOM_TAG } from '../api/types'
 import type { Work } from '../api/types'
 import { useViewMode } from '../composables/useViewMode'
-import { useAuthStore } from '../stores/auth'
 import FavoriteStar from './FavoriteStar.vue'
 
 const props = defineProps<{
@@ -174,40 +149,7 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const { imageOnly } = useViewMode()
-const auth = useAuthStore()
 const isHistory = computed(() => !!props.history)
-
-/*
- * 是否在视口附近：首屏已在视野内的卡片挂载即置 true（避免第一帧无模糊），
- * 其余交给共享 observer 更新；卸载时注销，避免 observer / WeakMap 残留。
- */
-const rootEl = ref<HTMLElement | null>(null)
-const near = ref(false)
-onMounted(() => {
-  const el = rootEl.value
-  if (!el) return
-  // 容器已接入 CardGlassLayer（媒体库 / 收藏 / 历史）：模糊由容器内唯一的固定层承担，
-  // 卡片自身不再需要 backdrop-filter 合成层，也就没有必要观察视口距离。
-  if (el.closest('.card-glass-host')) return
-  const r = el.getBoundingClientRect()
-  if (r.bottom > -1000 && r.top < window.innerHeight + 1000) near.value = true
-  nearCallbacks.set(el, (v) => { near.value = v })
-  getObserver().observe(el)
-})
-onUnmounted(() => {
-  const el = rootEl.value
-  if (!el) return
-  getObserver().unobserve(el)
-  nearCallbacks.delete(el)
-})
-/**
- * 封面 URL 只在作品数据 / 登录态变化时计算一次，避免每次渲染都读 localStorage 并拼串。
- * 依赖 auth.token：重新登录后自动换用新 token，不会留下旧 token 的失效图片地址。
- */
-const coverSrc = computed(() => {
-  void auth.token
-  return authedUrl(props.work.cover_url)
-})
 
 const FLAME_PATH =
   'M12 2c1.2 4.2-2.8 5.4-2.8 9.2a2.8 2.8 0 0 0 5.6 0c0-1.6-1-2.7-1-4.2 2.2 1.1 4.2 3.7 4.2 7a6 6 0 0 1-12 0C6 9.4 9 6.4 12 2Z'
@@ -253,12 +195,6 @@ function onSeriesClick(e: MouseEvent) {
   overflow: visible;
   /* overflow 变成 visible 后，flex 项默认会按内容最小宽度撑开；这里强制以固定宽度为准 */
   min-width: 0;
-  /*
-   * 布局 / 样式隔离：卡片内部的变化（图片解码完成、hover、信息区收放）不会触发
-   * 外层网格重排，也不会把样式失效传播到相邻卡片 —— 滚动时重绘范围更小。
-   * 不用 paint 隔离：销量火焰要压在卡片边框外，必须允许溢出。
-   */
-  contain: layout style;
   cursor: pointer;
   transition: transform var(--anim-duration), border-color var(--anim-duration);
   display: flex;
@@ -281,11 +217,6 @@ function onSeriesClick(e: MouseEvent) {
   overflow: hidden;
   position: relative;
   border-radius: 9px 9px 0 0;
-  /*
-   * 绘制隔离：封面是独立的一块（图 + 渐变 + 标签），隔离后滚动时这块单独光栅化，
-   * 不会因为相邻卡片重绘而被连带。overflow: hidden 已保证裁剪范围不变。
-   */
-  contain: paint;
 }
 .cover img {
   width: 100%;
