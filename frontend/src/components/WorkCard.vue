@@ -186,6 +186,9 @@ const near = ref(false)
 onMounted(() => {
   const el = rootEl.value
   if (!el) return
+  // 容器已接入 CardGlassLayer（媒体库 / 收藏 / 历史）：模糊由容器内唯一的固定层承担，
+  // 卡片自身不再需要 backdrop-filter 合成层，也就没有必要观察视口距离。
+  if (el.closest('.card-glass-host')) return
   const r = el.getBoundingClientRect()
   if (r.bottom > -1000 && r.top < window.innerHeight + 1000) near.value = true
   nearCallbacks.set(el, (v) => { near.value = v })

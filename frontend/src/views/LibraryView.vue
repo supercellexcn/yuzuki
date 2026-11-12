@@ -27,6 +27,8 @@
     </div>
 
     <div v-else class="grid">
+      <!-- 卡片毛玻璃统一层：全屏只模糊一次，滚动只更新裁剪矩形（见组件内注释） -->
+      <CardGlassLayer />
       <WorkCard
         v-for="w in displayItems"
         :key="w.id"
@@ -55,6 +57,7 @@ import { useLibraryStore } from '../stores/library'
 import { useAuthStore } from '../stores/auth'
 import type { FilterCondType } from '../api/types'
 import WorkCard from '../components/WorkCard.vue'
+import CardGlassLayer from '../components/CardGlassLayer.vue'
 
 const store = useLibraryStore()
 const auth = useAuthStore()

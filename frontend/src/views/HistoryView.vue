@@ -38,6 +38,8 @@
     </div>
 
     <div v-else class="grid">
+      <!-- 卡片毛玻璃统一层：全屏只模糊一次，滚动只更新裁剪矩形 -->
+      <CardGlassLayer />
       <WorkCard
         v-for="p in items"
         :key="p.play_id"
@@ -60,6 +62,7 @@ import { getPlays, authedUrl } from '../api'
 import type { PlayRecord } from '../api/types'
 import BackButton from '../components/BackButton.vue'
 import WorkCard from '../components/WorkCard.vue'
+import CardGlassLayer from '../components/CardGlassLayer.vue'
 
 const router = useRouter()
 const items = ref<PlayRecord[]>([])

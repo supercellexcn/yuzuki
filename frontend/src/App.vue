@@ -425,20 +425,30 @@ html.has-tag-acrylic .work-card .chip-actor {
   backdrop-filter: none;
 }
 /*
- * 作品卡片数量随分页持续增长，每张带 backdrop-filter 都会成为独立合成层。
- * 只让「视口附近」的卡片持有毛玻璃：card-near 由 WorkCard 的共享
- * IntersectionObserver 在卡片进入视口前（缓冲一屏）挂上、离开后摘下，
- * 可见卡片的模糊始终生效，不会随滚动开关，合成层数量也不随列表长度增长。
+ * 作品卡片的毛玻璃有两种承载方式，底色与高光完全一致：
+ *  ① 未接入统一层的页面（如播放页的推荐位，卡片数量少）：由 card-near 让视口附近
+ *     的卡片各自持有 backdrop-filter，合成层数量有限。
+ *  ② 已接入 CardGlassLayer 的容器（.card-glass-host：媒体库 / 收藏 / 历史）：
+ *     卡片自身不再持有 backdrop-filter，模糊由容器内唯一的固定层负责裁剪显示，
+ *     滚动时只更新裁剪矩形、不重新采样，成本与卡片数量无关。
+ * 两种方式都不会出现「滚动时模糊消失 / 停下再恢复」的跳变。
  */
-html.has-acrylic .work-card.card-near {
-  -webkit-backdrop-filter: var(--acrylic-filter);
-  backdrop-filter: var(--acrylic-filter);
+html.has-acrylic .work-card.card-near,
+html.has-acrylic .card-glass-host .work-card {
   background-image: linear-gradient(
     135deg,
     rgba(255, 255, 255, 0.07),
     rgba(255, 255, 255, 0) 45%,
     rgba(255, 255, 255, 0.03)
   );
+}
+html.has-acrylic .work-card.card-near {
+  -webkit-backdrop-filter: var(--acrylic-filter);
+  backdrop-filter: var(--acrylic-filter);
+}
+html.has-acrylic .card-glass-host .work-card {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 /*
  * ---- 液态玻璃：Element Plus 控件与弹出层 ----
