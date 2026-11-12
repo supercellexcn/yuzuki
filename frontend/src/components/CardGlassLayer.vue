@@ -69,7 +69,8 @@ function syncEnabled() {
   }
   enabled = root.classList.contains('has-acrylic') && !!wp && wp !== 'none' && pb > 0
   if (!enabled) hide()
-  else update()
+  // 开启时必须重新测量：关闭期间 measure 直接早退，坐标缓存是空的
+  else measure()
 }
 
 function hide() {
@@ -81,11 +82,26 @@ function hide() {
 /** 读取所有卡片的文档坐标。只在挂载 / 尺寸变化时执行，滚动过程中不读 DOM */
 function measure() {
   if (!host) return
+  /*
+   * 这一层没启用时（面板模糊为 0 / 没有壁纸）是隐藏的，完全没必要读卡片坐标。
+   * ResizeObserver 在每次分页追加、图片模式切换时都会触发，而 getBoundingClientRect
+   * 是强制同步布局，卡片越多越慢 —— 以前即使不开模糊也要 O(卡片数) 测一遍，
+   * 表现为「加载一页卡一下」。早退后这条路径归零。
+   */
+  if (!enabled) {
+    rects = []
+    lastPath = ''
+    lastSy = -1
+    lastSx = -1
+    return
+  }
   const sx = window.scrollX
   const sy = window.scrollY
   const next: Rect[] = []
-  for (const el of host.querySelectorAll<HTMLElement>('.work-card')) {
-    const r = el.getBoundingClientRect()
+  // 卡片都是容器的直接子元素：用 children 过滤比 querySelectorAll 少一次选择器匹配
+  for (const el of host.children) {
+    if (!el.classList.contains('work-card')) continue
+    const r = (el as HTMLElement).getBoundingClientRect()
     if (r.width < 4 || r.height < 4) continue
     next.push({ l: r.left + sx, t: r.top + sy, w: r.width, h: r.height })
   }

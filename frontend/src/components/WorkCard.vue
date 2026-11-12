@@ -253,6 +253,12 @@ function onSeriesClick(e: MouseEvent) {
   overflow: visible;
   /* overflow 变成 visible 后，flex 项默认会按内容最小宽度撑开；这里强制以固定宽度为准 */
   min-width: 0;
+  /*
+   * 布局 / 样式隔离：卡片内部的变化（图片解码完成、hover、信息区收放）不会触发
+   * 外层网格重排，也不会把样式失效传播到相邻卡片 —— 滚动时重绘范围更小。
+   * 不用 paint 隔离：销量火焰要压在卡片边框外，必须允许溢出。
+   */
+  contain: layout style;
   cursor: pointer;
   transition: transform var(--anim-duration), border-color var(--anim-duration);
   display: flex;
@@ -275,6 +281,11 @@ function onSeriesClick(e: MouseEvent) {
   overflow: hidden;
   position: relative;
   border-radius: 9px 9px 0 0;
+  /*
+   * 绘制隔离：封面是独立的一块（图 + 渐变 + 标签），隔离后滚动时这块单独光栅化，
+   * 不会因为相邻卡片重绘而被连带。overflow: hidden 已保证裁剪范围不变。
+   */
+  contain: paint;
 }
 .cover img {
   width: 100%;
