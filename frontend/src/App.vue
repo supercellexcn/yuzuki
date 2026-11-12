@@ -253,23 +253,14 @@ function closePoppersOnPageScroll() {
  * 一次交互周期只关闭一次弹层：原实现每个 scroll 事件都派发 3 个合成鼠标事件，
  * 会反复唤醒全站 click-outside 监听器。这里只在「用户点击之后的第一段滚动」派发一次，
  * 复位交给真实 pointerdown，避免一下一下滚轮时每下都触发一波事件造成顿挫。
- * 滚动期间给 <html> 挂 is-scrolling，临时去掉卡片的 backdrop-filter 合成层；
- * 空闲 2 秒后才恢复，让连续多段滚动共用同一状态，不再反复重建合成层。
+ * 卡片的毛玻璃不再随滚动开关：改由 WorkCard 按视口距离分配合成层（card-near）。
  */
 let poppersClosed = false
-let scrollIdleTimer: ReturnType<typeof setTimeout> | undefined
 function onPageScroll() {
-  const root = document.documentElement
-  root.classList.add('is-scrolling')
   if (!poppersClosed) {
     poppersClosed = true
     closePoppersOnPageScroll()
   }
-  if (scrollIdleTimer) clearTimeout(scrollIdleTimer)
-  scrollIdleTimer = setTimeout(() => {
-    scrollIdleTimer = undefined
-    root.classList.remove('is-scrolling')
-  }, 2000)
 }
 /** 真实点击复位闸门：用户新打开弹层后，下一段滚动才会再次关闭它 */
 function onUserPointerDown(e: PointerEvent) {
@@ -283,8 +274,6 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('scroll', onPageScroll)
   document.removeEventListener('pointerdown', onUserPointerDown, true)
-  if (scrollIdleTimer) clearTimeout(scrollIdleTimer)
-  document.documentElement.classList.remove('is-scrolling')
   document.documentElement.classList.remove('drawer-open')
 })
 
@@ -380,7 +369,6 @@ html.has-acrylic .sidebar,
 html.has-acrylic .sidebar-user-menu,
 html.has-acrylic .bottom-player,
 html.has-acrylic .mobile-dock,
-html.has-acrylic .work-card,
 html.has-acrylic .pl-panel,
 html.has-acrylic .header,
 /* 系统设置里的子卡片是透明分隔行，叠加 backdrop-filter 会在壁纸上透出一块色斑 */
@@ -437,17 +425,20 @@ html.has-tag-acrylic .work-card .chip-actor {
   backdrop-filter: none;
 }
 /*
- * 滚动期间降级作品卡片：backdrop-filter 让每张卡片都成为独立合成层，滚动时逐帧
- * 重采样背后内容，列表越滚越长开销线性上升。is-scrolling 由 onPageScroll 在滚动
- * 空闲 2 秒后移除，避免逐次滚轮反复重建合成层；同时关掉过渡与 hover 位移避免滚动中反复起动画。
+ * 作品卡片数量随分页持续增长，每张带 backdrop-filter 都会成为独立合成层。
+ * 只让「视口附近」的卡片持有毛玻璃：card-near 由 WorkCard 的共享
+ * IntersectionObserver 在卡片进入视口前（缓冲一屏）挂上、离开后摘下，
+ * 可见卡片的模糊始终生效，不会随滚动开关，合成层数量也不随列表长度增长。
  */
-html.is-scrolling .work-card {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  transition: none;
-}
-html.is-scrolling .work-card:hover {
-  transform: none;
+html.has-acrylic .work-card.card-near {
+  -webkit-backdrop-filter: var(--acrylic-filter);
+  backdrop-filter: var(--acrylic-filter);
+  background-image: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.07),
+    rgba(255, 255, 255, 0) 45%,
+    rgba(255, 255, 255, 0.03)
+  );
 }
 /*
  * ---- 液态玻璃：Element Plus 控件与弹出层 ----

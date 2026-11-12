@@ -1,7 +1,8 @@
 <template>
   <div
+    ref="rootEl"
     class="work-card"
-    :class="{ 'history-card': isHistory }"
+    :class="{ 'history-card': isHistory, 'card-near': near }"
     :id="'wc-' + work.id"
     @click="go"
   >
@@ -126,8 +127,31 @@
   </div>
 </template>
 
+<script lang="ts">
+/*
+ * 所有 WorkCard 共用一个 IntersectionObserver（卡片越多越不能每张卡一个实例）：
+ * 只有视口 ±1000px 内的卡片才挂 card-near、持有 backdrop-filter 合成层；
+ * 离屏卡片不参与合成，合成层数量不再随分页累积增长。
+ * 缓冲设在一屏以上，卡片进入视野前就已恢复模糊，不会出现「清晰一瞬」，
+ * 也不再有「滚动时关掉、停下 2 秒再恢复」的跳变。
+ */
+let sharedObserver: IntersectionObserver | null = null
+const nearCallbacks = new WeakMap<Element, (near: boolean) => void>()
+function getObserver() {
+  if (!sharedObserver) {
+    sharedObserver = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) nearCallbacks.get(e.target)?.(e.isIntersecting)
+      },
+      { rootMargin: '1000px' }
+    )
+  }
+  return sharedObserver
+}
+</script>
+
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authedUrl } from '../api'
 import { CUSTOM_TAG } from '../api/types'
@@ -152,6 +176,27 @@ const router = useRouter()
 const { imageOnly } = useViewMode()
 const auth = useAuthStore()
 const isHistory = computed(() => !!props.history)
+
+/*
+ * 是否在视口附近：首屏已在视野内的卡片挂载即置 true（避免第一帧无模糊），
+ * 其余交给共享 observer 更新；卸载时注销，避免 observer / WeakMap 残留。
+ */
+const rootEl = ref<HTMLElement | null>(null)
+const near = ref(false)
+onMounted(() => {
+  const el = rootEl.value
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  if (r.bottom > -1000 && r.top < window.innerHeight + 1000) near.value = true
+  nearCallbacks.set(el, (v) => { near.value = v })
+  getObserver().observe(el)
+})
+onUnmounted(() => {
+  const el = rootEl.value
+  if (!el) return
+  getObserver().unobserve(el)
+  nearCallbacks.delete(el)
+})
 /**
  * 封面 URL 只在作品数据 / 登录态变化时计算一次，避免每次渲染都读 localStorage 并拼串。
  * 依赖 auth.token：重新登录后自动换用新 token，不会留下旧 token 的失效图片地址。
