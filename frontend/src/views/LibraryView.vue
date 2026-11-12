@@ -146,8 +146,14 @@ const active = ref(false)
  * 串行加载并设页数上限，接口异常 / 数据不增长时立即停止，避免空转。
  */
 let filling = false
+let refill = false
 async function fillViewport() {
-  if (!active.value || filling) return
+  if (!active.value) return
+  // 正在补页时不能直接丢弃：这次检查可能对应刚落库的新列表
+  if (filling) {
+    refill = true
+    return
+  }
   filling = true
   try {
     for (let i = 0; i < 50; i++) {
@@ -172,6 +178,11 @@ async function fillViewport() {
     }
   } finally {
     filling = false
+    // 补页期间有新列表落库：再校准一次，避免这一轮检查被重入直接丢掉
+    if (refill) {
+      refill = false
+      if (active.value) void fillViewport()
+    }
   }
 }
 
@@ -179,12 +190,12 @@ function onResize() {
   void fillViewport()
 }
 
-// 每次请求结束（筛选 / 排序 / 搜索 / 翻页）都检查一次页面是否需要填满
+// 每次列表成功落库都校准一次是否需要补页。
+// 不能挂在 loading 的 true→false 边沿：筛选 / 搜索 / 清空请求可能重叠，
+// 最后完成的那个复位 loading 时是 false→false，watch 根本不会触发（清空搜索只剩一屏的根因）。
 watch(
-  () => store.loading,
-  (loading) => {
-    if (!loading) void fillViewport()
-  },
+  () => store.loadSeq,
+  () => void fillViewport(),
   // 必须等列表重新渲染后再检查滚动余量：默认的 pre 时机会读到上一份列表的旧布局，
   // 清空搜索等「替换列表」场景下会被旧布局误导而提前 return，导致只加载一屏。
   { flush: 'post' }

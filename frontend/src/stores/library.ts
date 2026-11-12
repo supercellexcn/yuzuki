@@ -32,6 +32,10 @@ export const useLibraryStore = defineStore('library', {
     scrollTop: 0,
     /** 列表整体替换时递增，供 LibraryView 的 v-memo 失效；追加分页时不递增 */
     revision: 0,
+    /** 请求序号：筛选 / 搜索 / 清空请求可能重叠，只接受最后一次请求的响应 */
+    requestId: 0,
+    /** 每次成功落库 +1：补页的触发信号，不依赖 loading 布尔边沿 */
+    loadSeq: 0,
   }),
   getters: {
     hasFilter(state): boolean {
@@ -56,18 +60,26 @@ export const useLibraryStore = defineStore('library', {
       }
       this.pageSize = settings.settings?.page_size || 20
     },
-    async fetch(mode: 'replace' | 'append' = 'replace') {
-      await this.ensurePageSize()
+    async fetch(mode: 'replace' | 'append' = 'replace', pageOverride?: number) {
+      // 立刻占位：ensurePageSize 有 await，不先置位会让同一 tick 的第二次 loadMore 也放行
       this.loading = true
+      await this.ensurePageSize()
+      // replace 让所有在飞请求过期；append 不抢占序号，避免把正在进行的 replace 挤掉
+      if (mode === 'replace') this.requestId += 1
+      const id = this.requestId
+      // 页码取快照：并发的 append 会把共享 page 顶到下一页，之后的 replace 再读会拿错页
+      const requestedPage = pageOverride ?? this.page
       try {
         const res = await getWorks({
           q: this.q || undefined,
           cond: this.condParams,
           sort: this.sort,
           order: this.order,
-          page: this.page,
+          page: requestedPage,
           pageSize: this.pageSize,
         })
+        // 过期请求属于旧筛选条件：它的 total / items 会覆盖新列表，直接丢弃
+        if (id !== this.requestId) return
         if (mode === 'append') {
           // 增量追加：不重建整个数组，配合 v-memo 跳过已有卡片的 patch
           this.items.push(...res.items)
@@ -76,15 +88,19 @@ export const useLibraryStore = defineStore('library', {
           this.revision += 1
         }
         this.total = res.total
+        this.page = requestedPage
         this.loaded = true
+        this.loadSeq += 1
       } finally {
-        this.loading = false
+        // 只有最后一次请求复位：并发时最后完成的请求不再出现 false→false 的无信号复位
+        if (id === this.requestId) this.loading = false
       }
     },
     async loadMore() {
       if (this.loading || !this.hasMore || this.randomMode) return
-      this.page += 1
-      await this.fetch('append')
+      const next = this.page + 1
+      this.page = next
+      await this.fetch('append', next)
     },
     // ---- 聚合条件（最多 5 个，可重复，点击切换） ----
     addCondition(type: FilterCond['type'], value: string): boolean {
