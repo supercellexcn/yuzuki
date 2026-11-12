@@ -529,6 +529,17 @@ html.has-acrylic .el-notification {
   --el-fill-color-light: rgba(255, 255, 255, 0.08);
   --el-fill-color-hover: rgba(255, 255, 255, 0.12);
 }
+/*
+ * 筛选弹层的运行时滚动降级：popper 自身（面板级）与内部搜索框（标签级）都带
+ * backdrop-filter，.chips 滚动时会逐帧重采样背后内容。is-scrolling 由 FilterMenu
+ * 在滚动中挂到 .filter-popover 上、空闲 2 秒后移除；静止时毛玻璃与高光完全不变。
+ * 只作用于侧栏四个筛选弹层，其他弹出层不受影响。
+ */
+html.has-acrylic .el-popper.filter-popover.is-scrolling:not(.is-dark),
+html:is(.has-acrylic, .has-tag-acrylic) .el-popper.filter-popover.is-scrolling .el-input__wrapper {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 /* 对话框 / 消息框用更大的圆角，接近苹果面板的形态 */
 html.has-acrylic .el-dialog,
 html.has-acrylic .el-message-box {

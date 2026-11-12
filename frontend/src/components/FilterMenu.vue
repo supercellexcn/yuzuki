@@ -4,7 +4,7 @@
     trigger="click"
     :placement="placement"
     :width="popoverWidth"
-    popper-class="filter-popover"
+    :popper-class="popoverClass"
   >
     <template #reference>
       <!-- 顶栏旧样式（未使用）与侧边栏样式共用同一套弹层内容 -->
@@ -25,9 +25,9 @@
       </el-button>
     </template>
 
-    <div class="chip-menu">
+    <div class="chip-menu" @wheel="onPopoverWheel">
       <el-input v-model="kw" placeholder="搜索…" clearable size="small" class="search" />
-      <div class="chips">
+      <div class="chips" @scroll.passive="onChipsScroll">
         <span
           v-for="it in filtered"
           :key="it.name + '|' + (it.category || '')"
@@ -48,7 +48,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { CUSTOM_TAG } from '../api/types'
 import { useIsMobile } from '../composables/useIsMobile'
@@ -99,6 +99,45 @@ const filtered = computed(() => {
 function pick(name: string) {
   emit('select', name)
 }
+
+/*
+ * 弹层内滚动是元素滚动（scroll 事件不冒泡到 window），App.vue 的页面滚动降级
+ * 对这里无效：带 backdrop-filter 的玻璃弹层滚动时会逐帧重采样背后内容。
+ * 这里自己维护 is-scrolling，滚动中临时降级，空闲 2 秒后恢复（与全站一致），
+ * 静止状态的毛玻璃外观完全不变。
+ */
+const scrolling = ref(false)
+let scrollIdleTimer: ReturnType<typeof setTimeout> | undefined
+function onChipsScroll() {
+  scrolling.value = true
+  if (scrollIdleTimer) clearTimeout(scrollIdleTimer)
+  scrollIdleTimer = setTimeout(() => {
+    scrollIdleTimer = undefined
+    scrolling.value = false
+  }, 2000)
+}
+const popoverClass = computed(() =>
+  scrolling.value ? 'filter-popover is-scrolling' : 'filter-popover'
+)
+/** 关闭弹层时立即复位，避免下次打开时残留降级状态 */
+watch(visible, (v) => {
+  if (v) return
+  scrolling.value = false
+  if (scrollIdleTimer) clearTimeout(scrollIdleTimer)
+  scrollIdleTimer = undefined
+})
+onUnmounted(() => {
+  if (scrollIdleTimer) clearTimeout(scrollIdleTimer)
+})
+
+/*
+ * 搜索框 / 底部提示不是滚动容器：在这些位置滚鼠标，wheel 会冒泡到 document，
+ * 带动库页面一起滚动。弹层内只有 .chips 需要滚动，其余区域直接吞掉 wheel；
+ * .chips 自身用 overscroll-behavior 阻断滚到边界后的滚动链。
+ */
+function onPopoverWheel(e: WheelEvent) {
+  if (!(e.target instanceof Element) || !e.target.closest('.chips')) e.preventDefault()
+}
 </script>
 
 <style scoped>
@@ -132,6 +171,8 @@ function pick(name: string) {
   gap: 6px;
   max-height: 300px;
   overflow-y: auto;
+  /* 滚到顶 / 底后不要把滚动交给页面（会触发全站滚动降级甚至关掉弹层） */
+  overscroll-behavior: contain;
 }
 .chip {
   display: inline-flex;
@@ -145,7 +186,8 @@ function pick(name: string) {
   font-size: 14px;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: all var(--anim-duration);
+  transition: background-color var(--anim-duration), border-color var(--anim-duration),
+    color var(--anim-duration);
   user-select: none;
 }
 .chip:hover {
@@ -178,5 +220,12 @@ function pick(name: string) {
   text-align: center;
   color: var(--muted);
   font-size: 13px;
+}
+/* 滚动中：滚过的 chip 会连续进出 hover，关掉过渡与边框变化避免逐帧重绘 */
+.filter-popover.is-scrolling .chip {
+  transition: none;
+}
+.filter-popover.is-scrolling .chip:not(.active):hover {
+  border-color: transparent;
 }
 </style>
