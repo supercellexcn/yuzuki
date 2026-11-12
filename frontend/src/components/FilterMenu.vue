@@ -102,9 +102,9 @@ function pick(name: string) {
 
 /*
  * 弹层内滚动是元素滚动（scroll 事件不冒泡到 window），App.vue 的页面滚动降级
- * 对这里无效：带 backdrop-filter 的玻璃弹层滚动时会逐帧重采样背后内容。
- * 这里自己维护 is-scrolling，滚动中临时降级，空闲 2 秒后恢复（与全站一致），
- * 静止状态的毛玻璃外观完全不变。
+ * 对这里无效。这里只维护 is-scrolling 抑制 chip 的过渡与 hover 变化（不可见），
+ * 不去动弹层的毛玻璃：滚动中临时去掉 backdrop-filter 会让整块玻璃忽清忽糊，
+ * 视觉跳变很明显。列表滚动改由 .chips 的独立合成层承担，毛玻璃始终生效。
  */
 const scrolling = ref(false)
 let scrollIdleTimer: ReturnType<typeof setTimeout> | undefined
@@ -173,6 +173,12 @@ function onPopoverWheel(e: WheelEvent) {
   overflow-y: auto;
   /* 滚到顶 / 底后不要把滚动交给页面（会触发全站滚动降级甚至关掉弹层） */
   overscroll-behavior: contain;
+  /*
+   * 列表滚动走合成线程、重绘范围只限列表内：带 backdrop-filter 的弹层滚动时，
+   * 内容若不是独立合成层，整块玻璃会逐帧重绘。这两条不改变静态 / 滚动中的视觉。
+   */
+  will-change: scroll-position;
+  contain: paint;
 }
 .chip {
   display: inline-flex;
