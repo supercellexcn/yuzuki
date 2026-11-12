@@ -223,6 +223,7 @@ export const usePlayerStore = defineStore('player', {
       const a = this.audio
       if (!a) return
       a.currentTime = Math.max(0, Math.min(this.duration || a.currentTime, a.currentTime + delta))
+      this.currentTime = a.currentTime
     },
     toggleLoop() {
       this.loop = !this.loop
@@ -236,7 +237,10 @@ export const usePlayerStore = defineStore('player', {
     },
     seek(t: number) {
       const a = this.audio
-      if (a) a.currentTime = t
+      if (!a) return
+      a.currentTime = t
+      // 立即回写：否则进度条松手后要等下一次 timeupdate（最多 250ms）才更新，会看到一次回弹
+      this.currentTime = a.currentTime
     },
     setVolume(v: number) {
       this.volume = v

@@ -9,14 +9,15 @@
 
     <div class="progress">
       <el-slider
-        :model-value="player.currentTime"
+        :model-value="displayTime"
         :max="player.duration || 1"
         :step="0.1"
         :show-tooltip="false"
-        @input="onSeek"
+        @input="onInput"
+        @change="onChange"
       />
       <div class="times">
-        <span>{{ fmt(player.currentTime) }}</span>
+        <span>{{ fmt(displayTime) }}</span>
         <span>{{ fmt(player.duration) }}</span>
       </div>
     </div>
@@ -76,6 +77,7 @@ import { useRouter } from 'vue-router'
 import { usePlayerStore } from '../stores/player'
 import { useSettingsStore } from '../stores/settings'
 import { useIsMobile } from '../composables/useIsMobile'
+import { useSeekBar } from '../composables/useSeekBar'
 import { authedUrl } from '../api'
 import PlayPauseIcon from './PlayPauseIcon.vue'
 import PlaybackIcon from './PlaybackIcon.vue'
@@ -84,6 +86,7 @@ const player = usePlayerStore()
 const settings = useSettingsStore()
 const router = useRouter()
 const isMobile = useIsMobile()
+const { displayTime, onInput, onChange } = useSeekBar()
 
 const seekSecs = computed(() => settings.settings?.seek_seconds || 15)
 // 显示当前播放的文件名（而非作品名）
@@ -93,10 +96,6 @@ const coverUrl = computed(() => authedUrl(player.current?.work?.cover_url || '')
 onMounted(() => {
   if (!settings.settings) settings.load().catch(() => {})
 })
-
-function onSeek(v: number | number[]) {
-  player.seek(Array.isArray(v) ? v[0] : v)
-}
 
 /** 回到播放界面：移动端打开全屏播放器，桌面端跳到详情页（push 入历史栈，返回可自然回退） */
 function goSource() {

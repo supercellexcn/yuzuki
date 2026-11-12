@@ -77,14 +77,15 @@
 
         <div class="fs-progress">
           <el-slider
-            :model-value="player.currentTime"
+            :model-value="displayTime"
             :max="player.duration || 1"
             :step="0.1"
             :show-tooltip="false"
-            @input="onSeek"
+            @input="onInput"
+            @change="onChange"
           />
           <div class="fs-times">
-            <span>{{ fmt(player.currentTime) }}</span>
+            <span>{{ fmt(displayTime) }}</span>
             <span>{{ fmt(player.duration) }}</span>
           </div>
         </div>
@@ -163,6 +164,7 @@ import { useFavoritesStore } from '../stores/favorites'
 import SidebarIcon from './SidebarIcon.vue'
 import { useLibraryStore } from '../stores/library'
 import { useFavorite } from '../composables/useFavorite'
+import { useSeekBar } from '../composables/useSeekBar'
 import { authedUrl } from '../api'
 import PlayPauseIcon from './PlayPauseIcon.vue'
 import PlaybackIcon from './PlaybackIcon.vue'
@@ -174,6 +176,7 @@ const router = useRouter()
 const favorites = useFavoritesStore()
 const library = useLibraryStore()
 const { fav } = useFavorite()
+const { displayTime, onInput, onChange } = useSeekBar()
 
 const playlistVisible = ref(false)
 const seekSecs = computed(() => settings.settings?.seek_seconds || 15)
@@ -296,9 +299,6 @@ watch(
 )
 onUnmounted(() => document.documentElement.classList.remove('fs-open'))
 
-function onSeek(v: number | number[]) {
-  player.seek(Array.isArray(v) ? v[0] : v)
-}
 function onVolume(v: number | number[]) {
   player.setVolume((Array.isArray(v) ? v[0] : v) / 100)
 }
