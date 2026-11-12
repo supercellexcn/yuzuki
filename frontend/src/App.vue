@@ -633,6 +633,17 @@ body::before {
   background-position: center;
   filter: var(--wallpaper-extra-filter, blur(var(--wallpaper-blur)));
   pointer-events: none;
+  /*
+   * 独立合成层：这一层是「固定不动 + 整屏大小」的，如果没有提升合成层，它会被画进
+   * 文档根图层的平铺块里 —— 滚动时每块新露出的区域都要把这块壁纸重新画一遍
+   * （cover 缩放 + DPR2 下几千万像素填充），滚动就必然掉帧，而且成本正比于视口面积。
+   * 提升之后壁纸只栅格化一次，滚动只是把它合成到帧上，这一层的每帧成本归零。
+   * will-change 会创建合成层与堆叠上下文；z-index: -1 的绘制顺序不变，
+   * 壁纸仍在所有内容之下，静止与滚动中的视觉完全一致。
+   * contain: strict 让它的尺寸 / 布局 / 绘制与外部彻底隔离，滚动不会连带失效。
+   */
+  will-change: transform;
+  contain: strict;
 }
 /* 全屏播放器打开时锁住底层页面滚动（否则触摸滑动会穿透去滚动背后的列表） */
 html.fs-open,
