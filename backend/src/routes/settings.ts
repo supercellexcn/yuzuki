@@ -67,6 +67,7 @@ settingsRouter.put('/', (req, res) => {
       control_opacity: body.control_opacity as number | undefined,
       card_size: body.card_size as AppSettings['card_size'] | undefined,
       card_width: body.card_width as number | undefined,
+      card_mobile_two_col: body.card_mobile_two_col as boolean | undefined,
       theme_color_nav: body.theme_color_nav as string | undefined,
       theme_color_actor: body.theme_color_actor as string | undefined,
       theme_color_tag: body.theme_color_tag as string | undefined,

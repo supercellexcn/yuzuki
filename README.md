@@ -314,6 +314,7 @@ docker compose up -d --build                             # ← 必须带 --build
 
 | 日期 | 改动 |
 | --- | --- |
+| 2026-11-13 | 修复「移动端锁定为每行两列」勾选后不保存：`PUT /api/settings` 的字段白名单漏了 `card_mobile_two_col`，请求里带了也会被丢弃，导致刷新后复选框回退、两列不生效；已补进白名单并验证保存 / 读取往返 |
 | 2026-11-13 | 全年龄适配与翻译版本入库：① 内置自定义标签「全年龄」启动时自动播种、标签管理里不可删除，抓取 DLsite 时「年龄指定」非 R18（含 api2 `age_category=all` 兜底）的作品自动打上，抓不到年龄时不打，全部标签筛选弹层里置顶；② 外观设置新增「移动端锁定为每行两列」，勾选后移动端无视小 / 中 / 大 / 自定义卡片尺寸固定两列（媒体库 / 收藏 / 播放历史），不勾选按实际尺寸；③ 新增 `work_translations` 表，从 DLsite 作品页识别翻译版入口（按语言名 / `hreflang` 识别，排除相关作品链接干扰），记录其它语言版本的 RJ 与语言，媒体库与后台作品搜索命中任意语言版本 RJ 都会展示该作品，作品详情接口返回 `translations` |
 | 2026-11-12 | 撤销作品库的滚动性能优化，恢复优化前的实现：删除壁纸模糊预烘焙（`--wallpaper-image-blurred` / `--wallpaper-extra-filter` 与 canvas 烘焙逻辑）、作品卡片与封面的 `contain` 绘制隔离、滚动期 `is-scrolling` 悬停抑制、`CardGlassLayer` 统一模糊层与 `card-near` 视口观察、媒体库的 `v-memo` 与滚动帧合并（恢复每次 scroll 记录滚动位置）。`body::before` 回到 `var(--wallpaper-image)` + `filter: blur(var(--wallpaper-blur))`；作品卡片毛玻璃回到由全局 `html.has-acrylic` 承载（常开，滚动中不降级）。除上述实现外，筛选弹层滚动优化、补页逻辑等其它改动保持不变 |
 | 2026-11-12 | 首页滚动卡顿优化（静止视觉完全不变）：① 壁纸层的整屏实时 `filter: blur()` 改为一次性 canvas 烘焙位图（设置 / 尺寸变化时重烘焙，失败自动回退），滚动时不再对整屏重算高斯；② 作品卡片加 `contain: layout style`、封面加 `contain: paint`，把滚动重绘限制在卡片内部；③ 滚动中给 `<html>` 挂 `is-scrolling`，抑制卡片 hover 位移与过渡（边框高亮与毛玻璃不变，停 160ms 恢复），消除滚轮时指针下卡片反复进出 hover 导致的合成层反复创建 / 销毁；④ `CardGlassLayer` 在未启用（面板模糊为 0 / 无壁纸）时 `measure()` 直接早退，不再于每次分页追加时遍历全部卡片强制同步布局 |
