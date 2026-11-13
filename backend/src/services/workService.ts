@@ -176,6 +176,11 @@ async function retryRefreshMetadata(db: DatabaseSync, workId: number, rj: string
       await sleep(500)
     }
   }
+  // 两次都失败（网络 / 风控）：记下 error 状态便于后台排查，字段保持原样，下次扫描还会重抓
+  db.prepare("UPDATE works SET fetch_status = 'error', updated_at = ? WHERE id = ?").run(
+    new Date().toISOString(),
+    workId
+  )
   console.warn(`[dlsite] ${rj} 补抓元数据 2 次均失败，保留旧数据`)
 }
 
@@ -191,6 +196,8 @@ async function createWork(
     meta = { ...meta, ...(await fetchWorkMeta(rj)) }
   } catch (e) {
     console.warn(`[dlsite] ${rj} fetch failed: ${(e as Error).message}`)
+    // 所有来源都没拿到（网络 / 风控）：先建成空记录，标 error 便于后台识别，下次扫描会重抓
+    meta.fetch_status = 'error'
   }
 
   let coverPath = ''

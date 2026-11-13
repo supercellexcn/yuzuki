@@ -91,17 +91,31 @@ export function coverSourceOf(url: string): 'dlsite' | 'hvdb' | '' {
 }
 
 /**
+ * 兜底站点（HVDB）的启用条件：**只有 DLsite 明确没有这个作品（404）时才允许**。
+ * 禁售（region_blocked）在上面已早退；网络异常 / 风控页（error / unknown）也不碰它 ——
+ * 否则一次临时故障就会把兜底数据写进库，这正是要避免的污染。
+ */
+export function shouldUseFallbackSite(status: string | undefined, meta: Partial<DlsiteMeta>): boolean {
+  if (status !== 'not_found') return false
+  return !meta.title || !meta.circle || !meta.actors?.length || !meta.tags?.length
+}
+
+/**
  * 抓取并解析某个 RJ 作品的完整元数据。
  *
- * 主源是 DLsite 作品页 HTML（带 locale cookie，返回指定语言）；作品下架/页面 404 时，
- * 依次兜底：announce 预告页 → JSON api2（product.json，字段最全）→ JSON api1
- * （info/ajax，下架后仍返回元数据，插件已验证）→ ci-en/社团 profile 页补社团名。
- * 销量来自 DLsite 内部 JSON 接口（尽力而为，失败不影响主体）。
+ * 主源是 DLsite 作品页 HTML（带 locale cookie，返回指定语言）。按页面返回分类处理：
+ * - 地区禁售（200 限制页）：立即返回，**任何兜底源都不调**；
+ * - 不存在 / 已下架（404）：依次试 announce 预告页 → JSON api2（product.json，字段最全）
+ *   → JSON api1（info/ajax，下架后仍返回元数据，插件已验证）→ ci-en/社团 profile 页补社团名，
+ *   最后才用 HVDB 兜底；
+ * - 网络异常 / 风控与改版页：只试 DLsite 自己的接口，**不碰 HVDB**，避免临时故障污染库。
+ *
+ * 销量 / 价格 / 评分等动态数据来自 DLsite 内部 JSON 接口（尽力而为，失败不影响主体）。
  *
  * 返回的 `fetch_status` 记录 DLsite 这次的返回状态，调用方写入作品表：
  * - region_blocked 时**直接返回，不走任何兜底** —— 兜底源（HVDB）会把标题/社团/标签
  *   凑成「看起来完整」，导致换到可用线路后不再重抓，反过来污染库里的数据。
- * - not_found / error 才继续兜底，此时库里的数据是 DLsite 确实没有时的补充。
+ * - not_found 才允许 HVDB 兜底，此时库里的数据是 DLsite 确实没有时的补充。
  *
  * 只有所有来源都拿不到任何有效信息时才抛错，调用方据此决定保留旧数据。
  */
@@ -159,6 +173,10 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
       meta.fetch_status = 'region_blocked'
       meta.actors = []
       meta.tags = []
+      // 禁售页的 og:image 是站点通用宣传图（不是作品封面），一律不采用：
+      // 否则会被当成 dlsite 来源的封面存下来，日后 DLsite 给出真封面时不再替换。
+      meta.cover_url = ''
+      meta.cover_source = ''
       return meta
     }
     // 200 但既没有信息区、也没命中禁售文案：风控 / 维护 / 改版页，不算「DL 正常返回」。
@@ -240,8 +258,8 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
     }
   }
 
-  // 6) HVDB 兜底：DLsite 各来源仍拿不到核心字段（标题/社团/声优/标签）时，从 HVDB 抓取（参考 kikoeru）
-  if (!meta.title || !meta.circle || !meta.actors?.length || !meta.tags?.length) {
+  // 6) HVDB 兜底：只在 DLsite 确认「不存在 / 已下架」（404）时启用，其余状态一概不碰
+  if (shouldUseFallbackSite(meta.fetch_status, meta)) {
     const hvdb = await fetchHvdbMeta(rj_code)
     if (hvdb) {
       if (!meta.title && hvdb.title) meta.title = hvdb.title
@@ -261,7 +279,7 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
     console.warn(`[dlsite] ${rj_code} 价格与评分均未取到（动态接口可能被限制）`)
   }
 
-  // 7) 全部来源（DLsite 各接口 + HVDB）都无有效信息才算失败（调用方据此保留旧数据 / 记 error）
+  // 7) 全部来源都无有效信息才算失败（调用方据此保留旧数据）
   const hasAny =
     Boolean(meta.title || meta.circle || meta.cover_url || meta.release_date) ||
     Boolean(meta.actors?.length || meta.tags?.length)
