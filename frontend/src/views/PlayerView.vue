@@ -409,8 +409,16 @@ function onRecPointerDown(e: PointerEvent) {
 .header {
   display: flex;
   gap: 24px;
-  /* 作品信息区加一层主题底色，避免文字直接压在壁纸上看不清 */
+  /*
+   * 作品信息区加一层主题底色，避免文字直接压在壁纸上看不清。
+   * 这里给不透明度设了下限（0.78）：面板调得很透时，底色几乎等于壁纸，
+   * 而 --panel-fg 是按「不透明面板色」算的反色，两者对不上就会出现
+   * 浅色壁纸 + 浅色字。下限保证反色结果与实际观感一致。
+   */
   background: var(--panel);
+  background: rgba(var(--panel-rgb), max(var(--panel-alpha), 0.78));
+  /* 文字颜色必须跟着面板底色走：深色主题色下自动变深字，浅色下变白字 */
+  color: var(--panel-fg);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 16px;
@@ -455,7 +463,8 @@ function onRecPointerDown(e: PointerEvent) {
   flex-wrap: wrap;
 }
 .label {
-  color: var(--muted);
+  /* 字段名：面板前景色的弱化版，随面板底色自动反色 */
+  color: var(--panel-muted);
 }
 .clickable {
   cursor: pointer;
@@ -537,7 +546,7 @@ function onRecPointerDown(e: PointerEvent) {
   line-height: 1;
 }
 .rating-note {
-  color: var(--muted);
+  color: var(--panel-muted);
   font-size: 13px;
 }
 .section-title {

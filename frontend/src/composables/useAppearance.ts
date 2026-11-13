@@ -309,7 +309,11 @@ export function useAppearance() {
     root.style.setProperty('--panel-rgb', rgbVars(panelMix))
     // 面板上的文字按实际面板色取对比度更高的黑/白（表格用 EP 浅色主题的深灰文字，
     // 深色面板上会糊成一片）；未加载设置时用 App.vue :root 里的兜底值
-    setVar('--panel-fg', foregroundOn(panelMix))
+    const panelFg = foregroundOn(panelMix)
+    setVar('--panel-fg', panelFg)
+    // 面板上的次要文字（字段名 / 说明）：同一个前景色降不透明度。
+    // 不能继续用固定的 --muted：面板在浅色壁纸上会整体偏亮，固定灰字会糊掉。
+    setVar('--panel-muted', rgba(panelFg, 0.62))
     // 作品卡片下半部分也由主题色决定
     setVar('--card-meta-bg', navRgb ? rgba(nav, CARD_META_ALPHA) : '')
 

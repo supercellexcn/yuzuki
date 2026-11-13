@@ -308,6 +308,8 @@ function scrollToTop() {
   --panel: rgba(var(--panel-rgb), var(--panel-alpha));
   /* 面板上的文字色：由 useAppearance 按实际面板色取对比度更高的黑/白 */
   --panel-fg: #e8ebf0;
+  /* 面板上的次要文字（字段名 / 说明）：面板前景色降不透明度，由 useAppearance 下发 */
+  --panel-muted: #9aa3b0;
   --border: #2a2e37;
   --text: #e8ebf0;
   --muted: #9aa3b0;
