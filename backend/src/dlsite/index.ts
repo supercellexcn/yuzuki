@@ -210,9 +210,10 @@ export function applyApi2(meta: Partial<DlsiteMeta>, api2: Api2Data, base: strin
       .map((g) => ({ name: (g.name || '').trim(), category: 'ジャンル' }))
       .filter((t) => t.name)
   }
-  // 两个字段任一存在即说明接口明确回答过「有哪些分类」：此时为空 = 该作品确实没有分类
-  // （作品页只有「作品形式」没有「分類」的作品，如全年龄 ASMR 企划）。
-  if (api2.genres !== undefined || api2.genres_replaced !== undefined) meta.tags_confirmed = true
+  // 注意：**只有真的拿到标签**才算确认。api2 返回空数组时不能直接下结论 ——
+  // 有些作品的分类只在作品页「分類」区（api2 为空），要抓一次 HTML 核实后才置
+  // tags_confirmed（见 shouldFetchPage / fetchWorkMeta 的 verifyTags）。
+  if (meta.tags?.length) meta.tags_confirmed = true
   if (!meta.age_rating) meta.age_rating = api2AgeRating(api2.age_category_string)
   const trans = api2Translations(api2.language_editions, meta.rj_code || '')
   if (!meta.translations?.length && trans.length) meta.translations = trans
@@ -220,8 +221,37 @@ export function applyApi2(meta: Partial<DlsiteMeta>, api2: Api2Data, base: strin
   if (meta.rating_count == null) meta.rating_count = api2RatingCount(api2.rate_count_detail)
 }
 
-/** 作品页解析结果只补空缺：JSON 已经拿到的字段以 JSON 为准（结构更可靠）。 */
-function mergeParsed(meta: Partial<DlsiteMeta>, parsed: Partial<DlsiteMeta>, base: string): void {
+/** 抓取时的额外校验开关。 */
+export interface FetchOptions {
+  /**
+   * 标签尚未确认（works.tags_confirmed = 0）：api2 标签为空时，再抓一次作品页，
+   * 看「分類」区到底有没有分类。作品页也确认没有，才把 tags_confirmed 置 1。
+   */
+  verifyTags?: boolean
+}
+
+/**
+ * 是否还需要抓作品页。
+ *
+ * 除了「api2 没命中」这个必然情况，还有两种要抓：
+ * 1. 声优为空，且接口连 `creaters` 字段都没给（给了空数组就说明确实没有声优）；
+ * 2. 标签为空 —— **接口给的是空数组也不能直接当作「没有分类」**：有些作品的分类
+ *    只出现在作品页的「分類」区（api2 为空）。传 `verifyTags` 时强制抓一次核实，
+ *    抓完以页面结果为准，之后不再重复。
+ */
+export function shouldFetchPage(
+  api2: Api2Data | null,
+  meta: Partial<DlsiteMeta>,
+  opts: FetchOptions = {}
+): boolean {
+  const creatorKnown = api2?.creaters !== undefined
+  const genresKnown = api2?.genres !== undefined || api2?.genres_replaced !== undefined
+  const wantActors = !meta.actors?.length && !creatorKnown
+  const wantTags = !meta.tags?.length && (opts.verifyTags || !genresKnown)
+  return wantActors || wantTags
+}
+
+/** 作品页解析结果只补空缺：JSON 已经拿到的字段以 JSON 为准（结构更可靠）。 */function mergeParsed(meta: Partial<DlsiteMeta>, parsed: Partial<DlsiteMeta>, base: string): void {
   if (!meta.title && parsed.title) meta.title = parsed.title
   if (!meta.circle && parsed.circle) meta.circle = parsed.circle
   if (!meta.release_date && parsed.release_date) meta.release_date = parsed.release_date
@@ -255,7 +285,7 @@ function mergeParsed(meta: Partial<DlsiteMeta>, parsed: Partial<DlsiteMeta>, bas
  * 返回的 `fetch_status` 由调用方写入作品表，决定下次扫描是否重抓。
  * 只有所有来源都拿不到任何有效信息时才抛错，调用方据此保留旧数据。
  */
-export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta>> {
+export async function fetchWorkMeta(rj_code: string, opts: FetchOptions = {}): Promise<Partial<DlsiteMeta>> {
   const settings = getSettings()
   const base = (settings.dlsite_base || 'https://www.dlsite.com').replace(/\/+$/, '')
   const path = settings.dlsite_path || '/maniax/work/=/product_id/{rj}.html'
@@ -294,14 +324,11 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
   applyDynamic(meta, touch)
   if (api2 && api2Ok) applyApi2(meta, api2, base)
 
-  // 2) api2 命中：静态字段已齐，唯一还要抓作品页的原因是「接口形态变了」——
-  //    连 creaters / genres 字段都不存在，说明声优 / 标签完全没拿到，补一次 HTML 确认。
+  // 2) api2 命中：静态字段已齐，唯一还要抓作品页的原因是「接口形态对不上」——
+  //    声优 / 标签拿不到且接口没给对应字段；或者标签为空但库里还没确认过
+  //    （verifyTags，见 shouldFetchPage）。抓一次确认后就能定论，不会每轮重复。
   let needHtml = !api2Ok
-  if (api2 && api2Ok) {
-    const creatorKnown = api2.creaters !== undefined
-    const genresKnown = api2.genres !== undefined || api2.genres_replaced !== undefined
-    needHtml = (!meta.actors?.length && !creatorKnown) || (!meta.tags?.length && !genresKnown)
-  }
+  if (api2 && api2Ok) needHtml = shouldFetchPage(api2, meta, opts)
   // api2 命中即已确认「当前线路可正常访问」，状态先钉成 ok：
   // 后面补 HTML 只是补字段，成败都不影响这个判断（否则会退化成 unknown → 每次扫描重抓）
   if (api2Ok) meta.fetch_status = 'ok'

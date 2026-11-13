@@ -331,7 +331,8 @@ async function createWork(
 ): Promise<void> {
   let meta: Partial<DlsiteMeta> = { rj_code: rj }
   try {
-    meta = { ...meta, ...(await fetchWorkMeta(rj)) }
+    // 新作品没有确认记录：标签为空时抓一次作品页核实「分類」区
+    meta = { ...meta, ...(await fetchWorkMeta(rj, { verifyTags: true })) }
   } catch (e) {
     console.warn(`[dlsite] ${rj} fetch failed: ${(e as Error).message}`)
     // 所有来源都没拿到（网络 / 风控）：先建成空记录，标 error 便于后台识别，下次扫描会重抓
@@ -477,10 +478,11 @@ function applyCollections(db: DatabaseSync, workId: number, meta: Partial<Dlsite
 }
 
 async function refreshMetadata(db: DatabaseSync, workId: number, rj: string): Promise<void> {
-  const meta = await fetchWorkMeta(rj)
   const cur = db
-    .prepare('SELECT cover_path, cover_source, cover_modified FROM works WHERE id = ?')
-    .get(workId) as unknown as CoverState
+    .prepare('SELECT cover_path, cover_source, cover_modified, tags_confirmed FROM works WHERE id = ?')
+    .get(workId) as unknown as CoverState & { tags_confirmed?: number }
+  // 标签还没确认过 → 让抓取流程在 api2 标签为空时抓一次作品页核实「分類」区
+  const meta = await fetchWorkMeta(rj, { verifyTags: Number(cur.tags_confirmed) !== 1 })
   const cover = await resolveCover(rj, meta, cur, false)
   applyMeta(db, workId, meta, cover)
   applyCollections(db, workId, meta)
@@ -493,7 +495,8 @@ async function refreshMetadata(db: DatabaseSync, workId: number, rj: string): Pr
 export async function syncWork(db: DatabaseSync, workId: number, rj: string): Promise<void> {
   // 手动同步要的是实时数据：先丢掉这个作品的批量缓存，避免拿到上一轮扫描的旧数字
   dropCachedEntry(rj)
-  const meta = await fetchWorkMeta(rj)
+  // 手动同步是「强制重抓」：标签为空时也抓一次作品页核实
+  const meta = await fetchWorkMeta(rj, { verifyTags: true })
   const cur = db
     .prepare('SELECT cover_path, cover_source, cover_modified FROM works WHERE id = ?')
     .get(workId) as unknown as CoverState
@@ -815,7 +818,8 @@ export async function redownloadCovers(
           result.statsUpdated++
           result.skipped++
         } else {
-          const meta = await fetchWorkMeta(w.rj_code)
+          // 标签还没确认过的作品，本次抓取时会额外抓一次作品页核实「分類」区
+          const meta = await fetchWorkMeta(w.rj_code, { verifyTags: Number(w.tags_confirmed) !== 1 })
 
           if (refreshStats) {
             // 全库对齐：元数据 + 集合字段 + 封面来源一次写全，不留下兜底时期的残留
