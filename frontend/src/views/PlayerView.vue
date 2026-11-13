@@ -34,6 +34,23 @@
           <div class="meta-row" v-if="work.sales_count != null">
             <span class="label">销量</span>{{ work.sales_count.toLocaleString() }}
           </div>
+          <!-- 评分：rating 为 null 表示没抓到（不显示）；0 表示确实没有评分 -->
+          <div class="meta-row" v-if="work.rating != null">
+            <span class="label">评分</span>
+            <template v-if="work.rating > 0">
+              <span class="rating">
+                <span class="rating-star">★</span>{{ formatRating(work.rating) }}
+              </span>
+              <span v-if="work.rating_count != null" class="rating-note">{{
+                formatRatingNote(work.rating_count)
+              }}</span>
+            </template>
+            <span v-else class="rating-note">暂无评分</span>
+          </div>
+          <!-- 价格：null 表示没抓到（不显示）；0 表示确实免费 -->
+          <div class="meta-row" v-if="work.price != null">
+            <span class="label">价格</span>{{ formatPrice(work.price) }}
+          </div>
           <div class="meta-row" v-if="work.actors.length">
             <span class="label">声优</span>
             <el-tag
@@ -133,6 +150,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useFavoritesStore } from '../stores/favorites'
 import { useFavorite } from '../composables/useFavorite'
 import { useImageActions, type ImageActionKind } from '../composables/useImageActions'
+import { formatPrice, formatRating, formatRatingNote } from '../utils/format'
 import FileList from '../components/FileList.vue'
 import ImageViewer from '../components/ImageViewer.vue'
 import ImageActions from '../components/ImageActions.vue'
@@ -506,6 +524,21 @@ function onRecPointerDown(e: PointerEvent) {
 }
 .meta-row.clickable:hover {
   color: var(--accent);
+}
+/* 评分：星标用固定金色（评分语义色，不随主题变），数值加粗、评论数用弱化色 */
+.rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+.rating-star {
+  color: #f0a13a;
+  line-height: 1;
+}
+.rating-note {
+  color: var(--muted);
+  font-size: 13px;
 }
 .section-title {
   font-size: 16px;
