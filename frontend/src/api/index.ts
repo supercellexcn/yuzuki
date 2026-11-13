@@ -188,6 +188,16 @@ export async function getScanStatus(): Promise<ScanJob> {
   return data
 }
 
+/**
+ * 任务状态推送的 SSE 地址（带 token）。
+ *
+ * 原生 EventSource 不能自定义请求头，所以这里走 `?token=` —— 后端 authMiddleware
+ * 同时支持 Authorization 头和查询参数，鉴权语义一致。
+ */
+export function scanEventsUrl(): string {
+  return authedUrl('/api/scan/events')
+}
+
 export async function pauseScan(): Promise<{ ok: boolean }> {
   const { data } = await http.post('/scan/pause')
   return data

@@ -10,9 +10,15 @@ import {
   resumeScan,
   getCoverJob,
   startCoverRedownload,
+  subscribeJob,
+  getJobSnapshot,
 } from '../scanner/jobManager.js'
 
 export const scanRouter = Router()
+
+/** 同时允许的 SSE 连接数上限：正常只有几个标签页，超出说明有人在堆积连接。 */
+const MAX_EVENT_STREAMS = 20
+let eventStreams = 0
 
 // 扫描作品
 scanRouter.post('/', async (_req, res) => {
@@ -22,6 +28,64 @@ scanRouter.post('/', async (_req, res) => {
 
 scanRouter.get('/status', (_req, res) => {
   res.json(getScanJob())
+})
+
+/**
+ * 任务状态推送（SSE）。
+ *
+ * 连接建立后先推一帧全量快照（scan / cover / recommendation），之后只推有变化的那几类。
+ * 状态保存在后端进程内存里，所以**刷新页面 / 重新连接都能立刻恢复最新进度** ——
+ * 唯一的丢失场景是后端进程重启（内存清零，扫描本身也随之中断）。
+ *
+ * 心跳每 15 秒一条注释行，用于穿越 nginx / 群晖反代 / NPM 的空闲超时。
+ */
+scanRouter.get('/events', (req, res) => {
+  if (eventStreams >= MAX_EVENT_STREAMS) {
+    res.status(503).json({ error: 'too many event streams' })
+    return
+  }
+  eventStreams++
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    // 关闭 nginx 的响应缓冲，否则事件会被攒在缓冲区里不发（群晖反代 / NPM 需同样处理）
+    'X-Accel-Buffering': 'no',
+  })
+  // SSE 是长连接：不能因为「一段时间没数据」被 Node 的默认超时掐断
+  req.socket.setTimeout(0)
+  req.socket.setNoDelay(true)
+
+  const send = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  }
+
+  // retry：告诉浏览器断线后 3 秒重连；紧接着推一次全量快照
+  res.write('retry: 3000\n\n')
+  const initial = getJobSnapshot()
+  send('scan', initial.scan)
+  send('cover', initial.cover)
+  send('recommendation', initial.recommendation)
+
+  const unsubscribe = subscribeJob((snapshot, kinds) => {
+    if (kinds.has('scan')) send('scan', snapshot.scan)
+    if (kinds.has('cover')) send('cover', snapshot.cover)
+    if (kinds.has('recommendation')) send('recommendation', snapshot.recommendation)
+  })
+
+  const heartbeat = setInterval(() => res.write(': ping\n\n'), 15000)
+
+  let closed = false
+  const cleanup = () => {
+    if (closed) return
+    closed = true
+    clearInterval(heartbeat)
+    unsubscribe()
+    eventStreams--
+  }
+  req.on('close', cleanup)
+  res.on('error', cleanup)
 })
 
 // 暂停 / 继续扫描

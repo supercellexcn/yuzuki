@@ -201,6 +201,9 @@ export function applyApi2(meta: Partial<DlsiteMeta>, api2: Api2Data, base: strin
   if (!meta.series) meta.series = (api2.title_name || api2.series_name || '').trim()
   const actors = api2Actors(api2.creaters)
   if (!meta.actors?.length && actors.length) meta.actors = actors
+  // creaters 字段存在即说明接口明确回答过「有哪些声优」：此时为空 = 该作品确实没有声优
+  // （CG 集 / 漫画等）。这决定后续扫描是否还要为「声优为空」重抓。
+  if (api2.creaters !== undefined) meta.actors_confirmed = true
   const genres = api2.genres?.length ? api2.genres : api2.genres_replaced
   if (!meta.tags?.length && genres?.length) {
     meta.tags = genres
@@ -318,6 +321,10 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
 
     if (pageHtml) {
       mergeParsed(meta, parseWorkPage(pageHtml, rj_code), base)
+
+      // 作品页信息区解析成功 → 声优字段已有权威答案（页面里没有「声优」行 = 真的没有）。
+      // 禁售页没有信息区，不会走到这里，所以不会把「没抓到」误标成「确认没有」。
+      if (hasInfoSection(pageHtml)) meta.actors_confirmed = true
 
       // 地区禁售：当前线路所在区域不卖。api2 已经拿到数据说明线路可用，不采信禁售判定。
       if (!api2Ok && isRegionBlockedPage(pageHtml)) {

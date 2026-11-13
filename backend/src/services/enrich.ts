@@ -28,6 +28,10 @@ export interface EnrichedWork {
   updated_at: string
   /** 上次抓取时 DLsite 的返回状态（'' / ok / region_blocked / not_found / error） */
   fetch_status: string
+  /** 上次扫描的处置结果：'' / 跳过 / 已处理 / 禁售 / 下架 / 失败 */
+  last_scan_result: string
+  /** 上次扫描处置的时间（ISO 字符串） */
+  last_scan_at: string
   cover_url: string
   actors: string[]
   tags: EnrichedTag[]
@@ -78,6 +82,8 @@ export function enrichWork(row: Record<string, unknown>, userId?: number): Enric
     added_at: String(row.added_at || ''),
     updated_at: String(row.updated_at || ''),
     fetch_status: String(row.fetch_status || ''),
+    last_scan_result: String(row.last_scan_result || ''),
+    last_scan_at: String(row.last_scan_at || ''),
     // 有作品封面或用默认封面兜底时都返回封面 URL（路由层负责回退）
     cover_url: row.cover_path || findDefaultCover() ? `/api/cover/${rj}` : '',
     actors,

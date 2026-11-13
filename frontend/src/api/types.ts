@@ -61,6 +61,8 @@ export interface ScanWorker {
   id: number
   rj: string
   stage: string
+  /** 当前（或刚处理完的）作品的处置结果：'' / 跳过 / 已处理 / 禁售 / 下架 / 失败 */
+  result?: string
 }
 
 export interface ScanJob {
@@ -71,6 +73,12 @@ export interface ScanJob {
   removed: number
   paused: boolean
   workers: ScanWorker[]
+  /** 本轮真正请求了 DLsite 的作品数 */
+  fetched: number
+  /** 本轮判定「无须抓取」而跳过的作品数 */
+  skipped: number
+  /** 处置结果分布：已处理 / 跳过 / 禁售 / 下架 / 失败 */
+  outcomes: Record<string, number>
   errors: string[]
   startedAt: string | null
   finishedAt: string | null
@@ -291,7 +299,14 @@ export interface AdminWork extends Work {
   missing: MissingField[]
   /** 上次抓取时 DLsite 的返回状态，决定这个作品该去哪找信息 */
   fetch_status?: DlFetchStatus
+  /** 上次扫描的处置结果：'' / 跳过 / 已处理 / 禁售 / 下架 / 失败 */
+  last_scan_result?: ScanOutcome | ''
+  /** 上次扫描处置的时间（ISO 字符串） */
+  last_scan_at?: string
 }
+
+/** 单次扫描对一部作品的处置结果（与后端 ScanOutcome 对应）。 */
+export type ScanOutcome = '跳过' | '已处理' | '禁售' | '下架' | '失败'
 
 /** 与后端 works.fetch_status 对应：'' = 未记录（旧数据 / 从未抓取） */
 export type DlFetchStatus = '' | 'ok' | 'region_blocked' | 'not_found' | 'error' | 'unknown'
@@ -306,11 +321,12 @@ export const DL_STATUS_LABELS: Record<string, string> = {
 }
 
 /** 作品信息缺失项，与后端 workService.MISSING_FIELDS 一一对应。 */
-export type MissingField = 'title' | 'circle' | 'cover' | 'release_date' | 'price' | 'tags'
+export type MissingField = 'title' | 'circle' | 'actors' | 'cover' | 'release_date' | 'price' | 'tags'
 
 export const MISSING_FIELD_LABELS: Record<MissingField, string> = {
   title: '标题',
   circle: '社团',
+  actors: '声优',
   cover: '封面',
   release_date: '发售日',
   price: '价格',
@@ -318,7 +334,15 @@ export const MISSING_FIELD_LABELS: Record<MissingField, string> = {
 }
 
 /** 筛选下拉用的选项顺序 */
-export const MISSING_FIELD_OPTIONS: MissingField[] = ['title', 'circle', 'cover', 'release_date', 'price', 'tags']
+export const MISSING_FIELD_OPTIONS: MissingField[] = [
+  'title',
+  'circle',
+  'actors',
+  'cover',
+  'release_date',
+  'price',
+  'tags',
+]
 
 export interface AdminWorkDetail extends AdminWork {
   files: MediaFile[]

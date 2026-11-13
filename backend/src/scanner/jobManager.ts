@@ -11,6 +11,12 @@ export interface ScanJob {
   removed: number
   paused: boolean
   workers: ScanWorkerStatus[]
+  /** 本轮真正请求了 DLsite 的作品数 */
+  fetched: number
+  /** 本轮判定「无须抓取」而跳过的作品数 */
+  skipped: number
+  /** 处置结果分布：已处理 / 跳过 / 禁售 / 下架 / 失败 */
+  outcomes: Record<string, number>
   errors: string[]
   startedAt: string | null
   finishedAt: string | null
@@ -24,6 +30,9 @@ const job: ScanJob = {
   removed: 0,
   paused: false,
   workers: [],
+  fetched: 0,
+  skipped: 0,
+  outcomes: {},
   errors: [],
   startedAt: null,
   finishedAt: null,
@@ -35,10 +44,12 @@ export function getScanJob(): ScanJob {
 
 export function pauseScan(): void {
   if (job.status === 'running') job.paused = true
+  publishJobNow()
 }
 
 export function resumeScan(): void {
   job.paused = false
+  publishJobNow()
 }
 
 export async function startScan(): Promise<boolean> {
@@ -50,6 +61,9 @@ export async function startScan(): Promise<boolean> {
   job.removed = 0
   job.paused = false
   job.workers = []
+  job.fetched = 0
+  job.skipped = 0
+  job.outcomes = {}
   job.errors = []
   job.startedAt = new Date().toISOString()
   job.finishedAt = null
@@ -59,20 +73,26 @@ export async function startScan(): Promise<boolean> {
 }
 
 async function runScan(): Promise<void> {
+  publishJobNow()
   try {
     const result = await scanAll(
       (current, done, total) => {
         job.current = current
         job.done = done
         job.total = total
+        publishJob('scan')
       },
       (workers) => {
         job.workers = workers
+        publishJob('scan')
       },
       { isPaused: () => job.paused }
     )
     job.errors.push(...result.errors)
     job.removed = result.removed
+    job.fetched = result.fetched
+    job.skipped = result.skipped
+    job.outcomes = { ...result.outcomes }
     job.status = 'done'
     // 扫描完成 → 若开启相关推荐且允许自动计算，则后台更新推荐关系
     const settings = getSettings()
@@ -84,6 +104,7 @@ async function runScan(): Promise<void> {
     job.status = 'error'
   }
   job.finishedAt = new Date().toISOString()
+  publishJobNow()
 }
 
 // ---- 封面重新下载任务 ----
@@ -137,6 +158,7 @@ export async function startCoverRedownload(refreshStats = false): Promise<boolea
 }
 
 async function runCoverRedownload(refreshStats: boolean): Promise<void> {
+  publishJobNow()
   try {
     const settings = getSettings()
     const r = await redownloadCovers(
@@ -144,6 +166,7 @@ async function runCoverRedownload(refreshStats: boolean): Promise<void> {
         coverJob.current = current
         coverJob.done = done
         coverJob.total = total
+        publishJob('cover')
       },
       settings.scan_concurrency || 5,
       refreshStats
@@ -158,6 +181,7 @@ async function runCoverRedownload(refreshStats: boolean): Promise<void> {
     coverJob.status = 'error'
   }
   coverJob.finishedAt = new Date().toISOString()
+  publishJobNow()
 }
 
 // ---- 相关推荐计算任务 ----
@@ -208,6 +232,7 @@ async function runRecommendationCalc(): Promise<void> {
     const r = await calculateRecommendations((done, total) => {
       recommendationJob.done = done
       recommendationJob.total = total
+      publishJob('recommendation')
     })
     recommendationJob.done = r.works
     recommendationJob.total = r.works
@@ -219,4 +244,73 @@ async function runRecommendationCalc(): Promise<void> {
     recommendationJob.status = 'error'
   }
   recommendationJob.finishedAt = new Date().toISOString()
+  publishJobNow()
+}
+
+// ---- 任务状态推送（SSE） ----
+
+/** 一次推送的完整快照：三类任务各一份。 */
+export type JobSnapshot = {
+  scan: ScanJob
+  cover: CoverJob
+  recommendation: RecommendationJob
+}
+
+/** 哪一类任务发生了变化 —— 连接端只推变化的那几条，避免每 100ms 重发三份 JSON。 */
+export type JobKind = 'scan' | 'cover' | 'recommendation'
+
+type JobListener = (snapshot: JobSnapshot, kinds: Set<JobKind>) => void
+const listeners = new Set<JobListener>()
+let publishTimer: NodeJS.Timeout | null = null
+const dirty = new Set<JobKind>()
+
+/**
+ * 订阅任务状态变化（SSE 连接用）；返回退订函数。
+ *
+ * 扫描进度回调非常密集（每部作品至少两次：开始 + 结束，并发 5 时一秒钟十几条），
+ * 因此这里做 100ms 合并：期间的所有变化只触发一次广播，连接上看到的是最新快照。
+ * 任务开始 / 结束时走 publishJobNow()，保证终态一定被推出去。
+ */
+export function subscribeJob(fn: JobListener): () => void {
+  listeners.add(fn)
+  return () => {
+    listeners.delete(fn)
+  }
+}
+
+function publishJob(kind: JobKind): void {
+  dirty.add(kind)
+  if (!listeners.size || publishTimer) return
+  publishTimer = setTimeout(() => {
+    publishTimer = null
+    const kinds = new Set(dirty)
+    dirty.clear()
+    emitSnapshot(kinds)
+  }, 100)
+}
+
+function publishJobNow(): void {
+  if (publishTimer) {
+    clearTimeout(publishTimer)
+    publishTimer = null
+  }
+  dirty.clear()
+  emitSnapshot(new Set<JobKind>(['scan', 'cover', 'recommendation']))
+}
+
+function emitSnapshot(kinds: Set<JobKind>): void {
+  if (!listeners.size) return
+  const snapshot = getJobSnapshot()
+  for (const fn of listeners) {
+    try {
+      fn(snapshot, kinds)
+    } catch {
+      /* 单个连接写失败（客户端已断开）不影响其它连接 */
+    }
+  }
+}
+
+/** 三类任务的当前快照（SSE 首帧与每次推送共用）。 */
+export function getJobSnapshot(): JobSnapshot {
+  return { scan: getScanJob(), cover: getCoverJob(), recommendation: getRecommendationJob() }
 }

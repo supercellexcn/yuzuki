@@ -130,6 +130,15 @@
           </el-tooltip>
         </template>
       </el-table-column>
+      <el-table-column label="上次扫描" width="110">
+        <template #default="{ row }">
+          <el-tooltip :content="lastScanHint(row)" placement="top">
+            <el-tag :type="lastScanType(row.last_scan_result)" size="small" effect="plain">
+              {{ lastScanLabel(row.last_scan_result) }}
+            </el-tag>
+          </el-tooltip>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="80">
         <template #default="{ row }">
           <el-tag v-if="row.hidden" size="small" type="danger">已隐藏</el-tag>
@@ -252,6 +261,37 @@ function dlStatusHint(s: DlFetchStatus | undefined): string {
       return '上次抓取时网络异常，下次扫描会重试'
     default:
       return '尚未记录（升级前的老数据，下次扫描时写入）'
+  }
+}
+
+/** 上次扫描的处置结果：跳过 = 一个请求都没发；已处理 = 真的抓了。 */
+function lastScanLabel(s: string | undefined): string {
+  return s || '未扫描'
+}
+
+function lastScanType(s: string | undefined): 'success' | 'warning' | 'info' | 'danger' {
+  if (s === '已处理') return 'success'
+  if (s === '禁售') return 'warning'
+  if (s === '下架') return 'info'
+  if (s === '失败') return 'danger'
+  return 'info' // 跳过 / 未扫描
+}
+
+function lastScanHint(row: AdminWork): string {
+  const when = row.last_scan_at ? new Date(row.last_scan_at).toLocaleString() : ''
+  switch (row.last_scan_result) {
+    case '跳过':
+      return `信息已完整，上次扫描未请求任何接口${when ? `（${when}）` : ''}`
+    case '已处理':
+      return `上次扫描实际请求了 DLsite 并写库${when ? `（${when}）` : ''}`
+    case '禁售':
+      return `上次扫描时当前线路所在区域不卖，已跳过不写兜底${when ? `（${when}）` : ''}`
+    case '下架':
+      return `上次扫描确认 DLsite 无此作品，走兜底站点${when ? `（${when}）` : ''}`
+    case '失败':
+      return `上次扫描抓取失败，下次会重试${when ? `（${when}）` : ''}`
+    default:
+      return '还没被任何一轮扫描处理过'
   }
 }
 

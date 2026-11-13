@@ -46,4 +46,9 @@ export interface DlsiteMeta {
   rating_count: number | null
   /** 本次抓取的 DLsite 返回状态；调用方据此写 works.fetch_status */
   fetch_status: DlsiteFetchStatus
+  /**
+   * 声优字段是否由权威数据源确认过（api2 明确返回了 creaters 字段，或作品页信息区
+   * 解析成功）。为 true 时 actors 为空表示「该作品确实没有声优」，不算信息缺失。
+   */
+  actors_confirmed?: boolean
 }

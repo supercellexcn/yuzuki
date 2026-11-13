@@ -340,12 +340,18 @@
         v-if="scanJob.total"
         :percentage="Math.round((scanJob.done / scanJob.total) * 100)"
       />
+      <!-- 本轮处置结果汇总：一眼看出哪些是跳过（没发请求）、哪些真的抓了 -->
+      <div v-if="scanOutcomes.length" class="outcomes">
+        <span v-for="o in scanOutcomes" :key="o.key" class="outcome" :class="o.cls">
+          {{ o.key }} {{ o.value }}
+        </span>
+      </div>
       <!-- 每条线程的实时执行情况 -->
       <div v-if="scanJob.workers && scanJob.workers.length" class="workers">
         <div v-for="w in scanJob.workers" :key="w.id" class="worker-line">
           <span class="w-id">线程{{ w.id + 1 }}</span>
           <span class="w-rj" :class="{ idle: !w.rj }">{{ w.rj || '空闲' }}</span>
-          <span class="w-stage" :class="stageClass(w.stage)">{{ w.stage }}</span>
+          <span class="w-stage" :class="stageClass(w.result || w.stage)">{{ w.result || w.stage }}</span>
         </div>
       </div>
       <div v-if="scanJob.status === 'done' && scanJob.removed > 0" class="removed-note">
@@ -406,17 +412,15 @@ import { usePlayerStore } from '../stores/player'
 import { useAppearance } from '../composables/useAppearance'
 import {
   startScan,
-  getScanStatus,
+  scanEventsUrl,
   pauseScan,
   resumeScan,
   startCoverRedownload,
-  getCoverStatus,
   resetLibrary,
   uploadDefaultCover,
   removeDefaultCover,
   defaultCoverUrl,
   startRecommendationCalc,
-  getRecommendationStatus,
   uploadWallpaper,
   removeWallpaper,
   wallpaperUrl,
@@ -459,14 +463,17 @@ const coverJob = ref<CoverJob | null>(null)
 /** 勾选后「重新下载缺失封面」会对所有作品更新价格 / 评分 / 评论数 / 销量 */
 const refreshStats = ref(false)
 const resetting = ref(false)
-let timer: number | undefined
-let coverTimer: number | undefined
 
 const recEnabled = ref(true)
 const recAutoCalc = ref(true)
 const recJob = ref<RecommendationJob | null>(null)
 const recCalcRunning = ref(false)
-let recTimer: number | undefined
+
+/**
+ * 任务状态走 SSE 推送（一条连接同时推扫描 / 封面 / 推荐三类任务）。
+ * 页面刷新或断线重连时后端会先推一帧全量快照，状态自然恢复，无需轮询兜底。
+ */
+let eventSource: EventSource | null = null
 
 // ---- 外观 / 壁纸 / 主题配色 ----
 const {
@@ -734,12 +741,9 @@ onMounted(async () => {
   const s = await store.load()
   applySettingsToForm(s)
   hasDefaultCover.value = s.has_default_cover === true
-  scanJob.value = await getScanStatus()
-  if (scanJob.value.status === 'running') startPolling()
-  coverJob.value = await getCoverStatus()
-  if (coverJob.value.status === 'running') startCoverPolling()
-  recJob.value = await getRecommendationStatus()
-  if (recJob.value.status === 'running') startRecPolling()
+  // 先建 SSE 连接：连上后端会立刻推一帧全量快照（扫描 / 封面 / 推荐），
+  // 所以刷新页面、断线重连都不需要再单独拉一次状态。
+  connectEvents()
   await refreshWallpapers() // 只探测，不换版本号，避免进入本页时壁纸重载闪屏
   await nextTick()
   suppressAutoSave = false
@@ -749,9 +753,7 @@ onUnmounted(() => {
   clearAutoSaveTimers()
   clearWallpaperBlurPreview()
   clearWallpaperEnabledPreview()
-  stopPolling()
-  stopCoverPolling()
-  stopRecPolling()
+  disconnectEvents()
 })
 
 async function save(showMessage = true) {
@@ -775,9 +777,8 @@ async function doScan() {
   await save()
   scanning.value = true
   try {
+    // 启动成功后由 SSE 推首个 running 快照，这里不用再拉状态
     await startScan()
-    scanJob.value = await getScanStatus()
-    startPolling()
   } catch (e) {
     ElMessage.error('启动扫描失败: ' + (e as Error).message)
   } finally {
@@ -788,7 +789,6 @@ async function doScan() {
 async function doPause() {
   try {
     await pauseScan()
-    scanJob.value = await getScanStatus()
   } catch {
     ElMessage.error('暂停失败')
   }
@@ -797,7 +797,6 @@ async function doPause() {
 async function doResume() {
   try {
     await resumeScan()
-    scanJob.value = await getScanStatus()
   } catch {
     ElMessage.error('继续失败')
   }
@@ -857,28 +856,72 @@ async function doRemoveDefaultCover() {
   }
 }
 
+/** 处置结果的固定展示顺序。 */
+const OUTCOME_ORDER = ['已处理', '跳过', '禁售', '下架', '失败'] as const
+
+/** 本轮扫描的处置结果汇总（已处理 / 跳过 / 禁售 / 下架 / 失败）。 */
+const scanOutcomes = computed(() =>
+  OUTCOME_ORDER.filter((k) => (scanJob.value?.outcomes?.[k] || 0) > 0).map((k) => ({
+    key: k,
+    value: scanJob.value?.outcomes?.[k] || 0,
+    cls: stageClass(k),
+  }))
+)
+
 function stageClass(stage: string): string {
-  if (stage === '完成') return 'ok'
+  if (stage === '完成' || stage === '已处理') return 'ok'
+  if (stage === '跳过') return 'skip'
   if (stage === '已暂停') return 'pause'
+  if (stage === '失败') return 'bad'
   return ''
 }
 
-function startPolling() {
-  stopPolling()
-  timer = window.setInterval(async () => {
-    scanJob.value = await getScanStatus()
-    if (scanJob.value.status === 'done' || scanJob.value.status === 'error') {
-      stopPolling()
-      ElMessage.success('扫描完成')
+/**
+ * 建立任务状态推送连接（SSE）。
+ *
+ * 一条连接同时收三类任务：scan / cover / recommendation。后端在每个事件里推对应任务的
+ * 完整快照，所以前端只是覆盖 ref，不做增量合并。断线时 EventSource 会按后端给的 retry
+ * （3 秒）自动重连，**重连后后端立刻重推一次全量快照** —— 刷新页面也是同样的路径，
+ * 因此不需要轮询兜底。
+ */
+function connectEvents() {
+  disconnectEvents()
+  const es = new EventSource(scanEventsUrl())
+  eventSource = es
+
+  es.addEventListener('scan', (e) => {
+    const prev = scanJob.value?.status
+    scanJob.value = JSON.parse((e as MessageEvent).data)
+    if (prev === 'running' && scanJob.value?.status === 'done') ElMessage.success('扫描完成')
+    if (prev === 'running' && scanJob.value?.status === 'error') ElMessage.error('扫描失败，详见错误列表')
+  })
+
+  es.addEventListener('cover', (e) => {
+    const prev = coverJob.value?.status
+    coverJob.value = JSON.parse((e as MessageEvent).data)
+    if (prev === 'running' && coverJob.value?.status === 'done') ElMessage.success('封面重下完成')
+    if (prev === 'running' && coverJob.value?.status === 'error') ElMessage.error('封面重下失败')
+  })
+
+  es.addEventListener('recommendation', (e) => {
+    const prev = recJob.value?.status
+    recJob.value = JSON.parse((e as MessageEvent).data)
+    if (prev === 'running' && recJob.value?.status === 'done') ElMessage.success('推荐计算完成')
+    if (prev === 'running' && recJob.value?.status === 'error') ElMessage.error('推荐计算失败')
+  })
+
+  es.onerror = () => {
+    // readyState 为 CONNECTING 时浏览器正在自动重连，不用打扰用户；
+    // CLOSED 表示连接被彻底放弃（如 token 失效返回 401）。
+    if (es.readyState === EventSource.CLOSED) {
+      console.warn('[yuzuki] 任务状态推送已断开，请刷新页面重试')
     }
-  }, 1500)
+  }
 }
 
-function stopPolling() {
-  if (timer) {
-    clearInterval(timer)
-    timer = undefined
-  }
+function disconnectEvents() {
+  eventSource?.close()
+  eventSource = null
 }
 
 async function doReset() {
@@ -907,31 +950,12 @@ async function doCoverRedownload() {
   await save()
   coverRunning.value = true
   try {
+    // 进度由 SSE 推送，不用再拉状态
     await startCoverRedownload(refreshStats.value)
-    coverJob.value = await getCoverStatus()
-    startCoverPolling()
   } catch (e) {
     ElMessage.error('启动封面重下失败: ' + (e as Error).message)
   } finally {
     coverRunning.value = false
-  }
-}
-
-function startCoverPolling() {
-  stopCoverPolling()
-  coverTimer = window.setInterval(async () => {
-    coverJob.value = await getCoverStatus()
-    if (coverJob.value.status === 'done' || coverJob.value.status === 'error') {
-      stopCoverPolling()
-      ElMessage.success('封面重下完成')
-    }
-  }, 1500)
-}
-
-function stopCoverPolling() {
-  if (coverTimer) {
-    clearInterval(coverTimer)
-    coverTimer = undefined
   }
 }
 
@@ -940,30 +964,10 @@ async function doRecommendationCalc() {
   recCalcRunning.value = true
   try {
     await startRecommendationCalc()
-    recJob.value = await getRecommendationStatus()
-    startRecPolling()
   } catch (e) {
     ElMessage.error('启动推荐计算失败: ' + (e as Error).message)
   } finally {
     recCalcRunning.value = false
-  }
-}
-
-function startRecPolling() {
-  stopRecPolling()
-  recTimer = window.setInterval(async () => {
-    recJob.value = await getRecommendationStatus()
-    if (recJob.value.status === 'done' || recJob.value.status === 'error') {
-      stopRecPolling()
-      ElMessage.success('推荐计算完成')
-    }
-  }, 1500)
-}
-
-function stopRecPolling() {
-  if (recTimer) {
-    clearInterval(recTimer)
-    recTimer = undefined
   }
 }
 
@@ -1202,6 +1206,42 @@ function resetThemeColors() {
 }
 .w-stage.pause {
   color: #e8c27a;
+}
+/* 跳过：没发任何请求，用低对比色与「已处理」区分开 */
+.w-stage.skip {
+  color: var(--muted);
+}
+.w-stage.bad {
+  color: #e88;
+}
+/* 本轮处置结果汇总 */
+.outcomes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+.outcome {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: #c3cbd7;
+  background: #15181d;
+}
+.outcome.ok {
+  color: #7bd88f;
+  border-color: rgba(123, 216, 143, 0.35);
+}
+.outcome.skip {
+  color: var(--muted);
+}
+.outcome.pause {
+  color: #e8c27a;
+  border-color: rgba(232, 194, 122, 0.35);
+}
+.outcome.bad {
+  color: #e88;
+  border-color: rgba(238, 136, 136, 0.35);
 }
 .errors {
   display: flex;

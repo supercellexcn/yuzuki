@@ -29,6 +29,16 @@ CREATE TABLE IF NOT EXISTS works (
   fetch_status TEXT NOT NULL DEFAULT '',
   /** 当前封面文件来自哪里：'' | dlsite | hvdb —— 用于让 DLsite 封面覆盖早前兜底写入的封面 */
   cover_source TEXT NOT NULL DEFAULT '',
+  /**
+   * 声优字段是否已被权威数据源确认过（api2 返回过 creaters / 作品页信息区解析成功）。
+   * 1 = 已确认：此时「声优为空」表示该作品确实没有声优（CG 集、漫画等），不算缺失；
+   * 0 = 未确认：老数据或没抓到声优，下次扫描需要补抓。
+   */
+  actors_confirmed INTEGER NOT NULL DEFAULT 0,
+  /** 上次扫描的处置结果：'' | 跳过 | 已处理 | 禁售 | 下架 | 失败 —— 便于判断该去哪找信息 */
+  last_scan_result TEXT NOT NULL DEFAULT '',
+  /** 上次扫描处置的时间（ISO 字符串，空表示还没被扫描处理过） */
+  last_scan_at TEXT NOT NULL DEFAULT '',
   added_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -224,6 +234,18 @@ function migrate(d: DatabaseSync): void {
   }
   if (!w.some((c) => c.name === 'cover_source')) {
     d.exec("ALTER TABLE works ADD COLUMN cover_source TEXT NOT NULL DEFAULT ''")
+  }
+  // 声优是否已被权威数据源确认：老库为 0，下次扫描会把「声优为空」的作品重抓一次，
+  // 抓完（api2 的 creaters 或作品页信息区）置 1，从此「空」即代表该作品真的没有声优。
+  if (!w.some((c) => c.name === 'actors_confirmed')) {
+    d.exec('ALTER TABLE works ADD COLUMN actors_confirmed INTEGER NOT NULL DEFAULT 0')
+  }
+  // 上次扫描处置结果 / 时间：老数据留空，下一轮扫描会全部写一遍
+  if (!w.some((c) => c.name === 'last_scan_result')) {
+    d.exec("ALTER TABLE works ADD COLUMN last_scan_result TEXT NOT NULL DEFAULT ''")
+  }
+  if (!w.some((c) => c.name === 'last_scan_at')) {
+    d.exec("ALTER TABLE works ADD COLUMN last_scan_at TEXT NOT NULL DEFAULT ''")
   }
 
   // play_history.rj_code：以 RJ 号作为稳定关联键，作品被删后重新入库时能接回历史

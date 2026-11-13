@@ -9,6 +9,12 @@ export interface ScanResult {
   added: number
   updated: number
   removed: number
+  /** 本轮真正请求了 DLsite 的作品数（含抓取失败） */
+  fetched: number
+  /** 本轮判定为「无须抓取」而跳过的作品数 —— 一个请求都没发 */
+  skipped: number
+  /** 处置结果分布：已处理 / 跳过 / 禁售 / 下架 / 失败 */
+  outcomes: Record<string, number>
   errors: string[]
 }
 
@@ -17,6 +23,8 @@ export interface ScanWorkerStatus {
   id: number
   rj: string
   stage: string
+  /** 当前（或刚处理完的）这部作品的处置结果：'' | 跳过 | 已处理 | 禁售 | 下架 | 失败 */
+  result: string
 }
 
 /** 扫描控制（暂停/继续）。 */
@@ -47,7 +55,16 @@ export async function scanAll(
   const settings = getSettings()
   const sources = settings.source_paths
   const concurrency = Math.max(1, Math.min(20, settings.scan_concurrency || 5))
-  const result: ScanResult = { total: 0, added: 0, updated: 0, removed: 0, errors: [] }
+  const result: ScanResult = {
+    total: 0,
+    added: 0,
+    updated: 0,
+    removed: 0,
+    fetched: 0,
+    skipped: 0,
+    outcomes: {},
+    errors: [],
+  }
 
   const found: FoundDir[] = []
   for (const source of sources) {
@@ -76,7 +93,12 @@ export async function scanAll(
   // 每个 worker 只有完整处理完当前作品（含封面下载）才会取下一条。
   let done = 0
   let nextIndex = 0
-  const workers: ScanWorkerStatus[] = Array.from({ length: concurrency }, (_, id) => ({ id, rj: '', stage: '空闲' }))
+  const workers: ScanWorkerStatus[] = Array.from({ length: concurrency }, (_, id) => ({
+    id,
+    rj: '',
+    stage: '空闲',
+    result: '',
+  }))
   const emitWorkers = () => onWorker?.(workers.map((w) => ({ ...w })))
 
   // 批量预取：按 50 个一批把动态数据拉回缓存，逐部流程用同一份数据就不再单独请求。
@@ -85,12 +107,19 @@ export async function scanAll(
   for (const w of workers) w.stage = '预取动态数据'
   emitWorkers()
   try {
-    const pf = await prefetchDynamic(unique.map((f) => f.rj), 'missing')
+    const pf = await prefetchDynamic(unique.map((f) => f.rj), 'missing', (done, total) => {
+      // 预取阶段没有单部进度，必须显示批进度，否则界面上看起来像卡死
+      for (const w of workers) w.stage = `预取动态数据 ${done}/${total} 批`
+      emitWorkers()
+    })
     if (pf.candidates) {
       console.log(
         `[yuzuki] 批量预取动态数据：${pf.candidates} 个候选 / ${pf.batches} 次请求，返回 ${pf.entries} 条`
       )
     }
+    console.log(
+      `[yuzuki] 扫描 ${unique.length} 部：需抓取 ${pf.candidates} 部，直接跳过 ${unique.length - pf.candidates} 部`
+    )
   } catch (e) {
     console.warn(`[yuzuki] 批量预取动态数据失败，退回逐个抓取: ${(e as Error).message}`)
   }
@@ -110,21 +139,26 @@ export async function scanAll(
       const i = nextIndex++
       if (i >= unique.length) return
       const f = unique[i]
-      workers[id] = { id, rj: f.rj, stage: '开始' }
+      workers[id] = { id, rj: f.rj, stage: '开始', result: '' }
       emitWorkers()
       onProgress(f.rj, done, unique.length)
       try {
         const r = await upsertWorkFolder(f.rj, f.dir, f.source, (stage) => {
-          workers[id] = { id, rj: f.rj, stage }
+          workers[id] = { id, rj: f.rj, stage, result: '' }
           emitWorkers()
         })
         if (r.created) result.added++
         else result.updated++
+        countOutcome(result, r.outcome)
+        // 处置结果保留在线程状态里，前端一眼看出这部是「跳过」还是「已处理」
+        workers[id] = { id, rj: f.rj, stage: r.outcome, result: r.outcome }
       } catch (e) {
         result.errors.push(`${f.rj}: ${(e as Error).message}`)
+        countOutcome(result, '失败')
+        workers[id] = { id, rj: f.rj, stage: '失败', result: '失败' }
       }
       done++
-      workers[id] = { id, rj: f.rj, stage: '完成' }
+      workers[id] = { ...workers[id], stage: '完成' }
       emitWorkers()
       onProgress('', done, unique.length)
       // 单个作品处理完稍作喘息，避免并发瞬间压力过大被 DLsite 封
@@ -156,8 +190,20 @@ export async function scanAll(
     console.log(`[yuzuki] 已移除 ${result.removed} 个源文件夹不存在的工作`)
   }
 
+  const summary = Object.entries(result.outcomes)
+    .map(([k, v]) => `${k} ${v}`)
+    .join(' · ')
+  console.log(`[yuzuki] 扫描完成：${summary || '无'}（共 ${unique.length} 部）`)
+
   onProgress('', unique.length, unique.length)
   return result
+}
+
+/** 累计处置结果（同时维护 fetched / skipped 两个汇总数字）。 */
+function countOutcome(result: ScanResult, outcome: string): void {
+  result.outcomes[outcome] = (result.outcomes[outcome] || 0) + 1
+  if (outcome === '跳过') result.skipped++
+  else result.fetched++
 }
 
 interface RjDir {

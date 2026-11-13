@@ -14,8 +14,12 @@ const AUDIO_EXTS = new Set(['mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'opus', '
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'mkv', 'mov', 'avi', 'm4v', 'ts'])
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'])
 
+/** 一次扫描对单个作品的处置结果，同时写入 works.last_scan_result。 */
+export type ScanOutcome = '跳过' | '已处理' | '禁售' | '下架' | '失败'
+
 export interface UpsertResult {
   created: boolean
+  outcome: ScanOutcome
 }
 
 export interface CoverRedownloadResult {
@@ -46,6 +50,11 @@ interface WorkRow {
   fetch_status: string
   /** 当前封面文件来源：'' / dlsite / hvdb */
   cover_source: string
+  /** 1 = 声优字段已被权威数据源确认（此时「无声优」代表该作品真的没有） */
+  actors_confirmed?: number
+  /** 上次扫描的处置结果：'' / 跳过 / 已处理 / 禁售 / 下架 / 失败 */
+  last_scan_result?: string
+  last_scan_at?: string
   /** 1 = 用户手动设置过封面，抓取时不得覆盖 */
   cover_modified?: number
   updated_at: string
@@ -63,8 +72,11 @@ interface FileRow {
 /**
  * 将本地一个 RJ 文件夹同步进数据库：
  * - 若作品不存在，则从 DLsite 抓取元数据并入库；
- * - 若已存在但没有标题（上次抓取失败），尝试重新抓取；
+ * - 若已存在且信息不完整（或上次禁售），补抓一次；
+ * - 信息完整且未要求刷新时**一个请求都不发**，直接跳过；
  * - 始终重扫该文件夹下的文件列表。
+ *
+ * 返回值里的 outcome 是本轮对这部作品的处置结果，同时写入 works.last_scan_result。
  */
 export async function upsertWorkFolder(
   rj: string,
@@ -76,26 +88,59 @@ export async function upsertWorkFolder(
   const existing = db.prepare('SELECT * FROM works WHERE rj_code = ?').get(rj) as unknown as WorkRow | undefined
 
   let created = false
+  let outcome: ScanOutcome
   if (!existing) {
     created = true
     onStage?.('抓取元数据')
     await createWork(db, rj, folder, source, onStage)
+    outcome = fetchedOutcome(db, rj)
   } else if (needsMetadataRefresh(db, existing)) {
     // 信息缺失（无标题 / 无声优 / 无封面文件）→ 补抓，最多重试 2 次
     onStage?.('补抓元数据')
     await retryRefreshMetadata(db, existing.id, rj)
+    outcome = fetchedOutcome(db, rj)
+  } else {
+    // 数据完整、未勾选刷新动态数据：不请求任何网站接口，直接跳过
+    outcome = '跳过'
   }
 
   const work = db.prepare('SELECT * FROM works WHERE rj_code = ?').get(rj) as unknown as WorkRow
   onStage?.('扫描文件')
   scanWorkFiles(db, work.id, folder)
-  return { created }
+  markScanResult(db, work.id, outcome)
+  return { created, outcome }
+}
+
+/** fetch_status → 本轮处置结果。 */
+function outcomeOfStatus(status: string): ScanOutcome {
+  if (status === 'ok') return '已处理'
+  if (status === 'region_blocked') return '禁售'
+  if (status === 'not_found') return '下架'
+  return '失败'
+}
+
+/** 抓取完成后按库里的最新状态给出处置结果。 */
+function fetchedOutcome(db: DatabaseSync, rj: string): ScanOutcome {
+  const row = db.prepare('SELECT fetch_status FROM works WHERE rj_code = ?').get(rj) as
+    | { fetch_status?: string }
+    | undefined
+  return outcomeOfStatus(String(row?.fetch_status || ''))
+}
+
+/** 记录「上次扫描的处置结果 + 时间」，跳过的作品也写，便于后台区分。 */
+function markScanResult(db: DatabaseSync, workId: number, outcome: ScanOutcome): void {
+  db.prepare('UPDATE works SET last_scan_result = ?, last_scan_at = ? WHERE id = ?').run(
+    outcome,
+    new Date().toISOString(),
+    workId
+  )
 }
 
 /** 「信息是否完整」的判定项：只有这些缺了才算不完整。 */
 export const MISSING_FIELDS = {
   title: '标题',
   circle: '社团',
+  actors: '声优',
   cover: '封面',
   release_date: '发售日',
   price: '价格',
@@ -111,6 +156,7 @@ interface MissingCheckRow {
   release_date?: unknown
   price?: unknown
   cover_path?: unknown
+  actors_confirmed?: unknown
 }
 
 function coverFileExists(coverPath: string): boolean {
@@ -136,6 +182,10 @@ function nativeTagCount(db: DatabaseSync, workId: number): number {
  * 「DLsite 上没有这个作品」与「作品在当前离线地区不卖」在库里表现一致（都缺），
  * 下次扫描只要还是缺就会继续抓，换到可用线路后自然补齐。
  *
+ * 声优比较特殊：CG 集 / 漫画这类作品确实没有声优，不能一律算缺失。
+ * 靠 actors_confirmed 区分 —— 只有「没抓到声优且从未被权威数据源确认过」才算缺，
+ * 抓过一次（api2 的 creaters / 作品页信息区）后为空即视为该作品真的没有。
+ *
  * 系列、评分、评论数、销量、其它语言版本都不算必需项：
  * 前两者可能真的没有，后两者是 0 也合理（NULL 才代表没抓到）。
  */
@@ -143,11 +193,19 @@ export function missingFieldsOf(db: DatabaseSync, row: MissingCheckRow): Missing
   const out: MissingField[] = []
   if (!String(row.title || '').trim()) out.push('title')
   if (!String(row.circle || '').trim()) out.push('circle')
+  if (Number(row.actors_confirmed) !== 1 && !actorCount(db, Number(row.id))) out.push('actors')
   if (!coverFileExists(String(row.cover_path || ''))) out.push('cover')
   if (!String(row.release_date || '').trim()) out.push('release_date')
   if (row.price == null) out.push('price')
   if (!nativeTagCount(db, Number(row.id))) out.push('tags')
   return out
+}
+
+function actorCount(db: DatabaseSync, workId: number): number {
+  const { c } = db.prepare('SELECT COUNT(*) AS c FROM work_actors WHERE work_id = ?').get(workId) as {
+    c: number
+  }
+  return c
 }
 
 /**
@@ -203,14 +261,15 @@ export interface PrefetchResult {
  */
 export async function prefetchDynamic(
   rjs: string[],
-  mode: 'missing' | 'all' = 'missing'
+  mode: 'missing' | 'all' = 'missing',
+  onProgress?: (done: number, total: number) => void
 ): Promise<PrefetchResult> {
   const targets = pickRefreshTargets(rjs, mode)
   if (!targets.length) return { candidates: 0, entries: 0, batches: 0 }
 
   // 新一轮预取：先清掉上一轮的残留，避免旧数据混进来
   clearDynamicCache()
-  const entries = await fetchApi1Batch(targets)
+  const entries = await fetchApi1Batch(targets, BATCH_SIZE, onProgress)
   return {
     candidates: targets.length,
     entries: Object.keys(entries).length,
@@ -287,8 +346,8 @@ async function createWork(
   const info = db
     .prepare(
       `INSERT INTO works (rj_code, title, circle, release_date, series, sales_count, price, rating, rating_count,
-         cover_path, cover_source, folder_path, source_path, fetch_status, added_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         cover_path, cover_source, folder_path, source_path, actors_confirmed, fetch_status, added_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       rj,
@@ -304,6 +363,7 @@ async function createWork(
       coverPath ? meta.cover_source || '' : '',
       folder,
       source,
+      meta.actors_confirmed ? 1 : 0,
       meta.fetch_status || '',
       now,
       now
@@ -369,6 +429,7 @@ function applyMeta(db: DatabaseSync, workId: number, meta: Partial<DlsiteMeta>, 
        cover_path = ?, cover_source = ?,
        sales_count = COALESCE(?, sales_count), price = COALESCE(?, price),
        rating = COALESCE(?, rating), rating_count = COALESCE(?, rating_count),
+       actors_confirmed = CASE WHEN ? = 1 THEN 1 ELSE actors_confirmed END,
        fetch_status = ?, updated_at = ?
      WHERE id = ?`
   ).run(
@@ -382,6 +443,8 @@ function applyMeta(db: DatabaseSync, workId: number, meta: Partial<DlsiteMeta>, 
     meta.price ?? null,
     meta.rating ?? null,
     meta.rating_count ?? null,
+    // 只有本次确实由权威数据源确认过声优字段时才置 1，从不主动清 0
+    meta.actors_confirmed ? 1 : 0,
     meta.fetch_status || '',
     new Date().toISOString(),
     workId

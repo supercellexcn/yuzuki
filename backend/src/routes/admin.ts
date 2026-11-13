@@ -14,6 +14,9 @@ const HIDDEN_TYPES = new Set(['work', 'series', 'circle', 'actor', 'tag'])
 const MISSING_COND: Record<string, string> = {
   title: "TRIM(w.title) = ''",
   circle: "TRIM(w.circle) = ''",
+  // 声优为空时，只有「尚未确认过声优字段」才算缺失（已确认过说明作品真的没有声优）
+  actors: `NOT EXISTS (SELECT 1 FROM work_actors wa WHERE wa.work_id = w.id)
+           AND IFNULL(w.actors_confirmed, 0) = 0`,
   cover: "w.cover_path = ''",
   release_date: "TRIM(w.release_date) = ''",
   price: 'w.price IS NULL',

@@ -124,11 +124,20 @@ export function buildBatchUrl(base: string, rjs: string[]): string {
  *
  * 一次请求最多 50 个 RJ，返回 `{ RJ: {...} }`；不存在的 RJ 直接不出现（不影响其它条目，
  * 线上已验证）。**任何一批失败都不抛错**：跳过这一批，逐部流程会退回单独请求。
+ *
+ * `onProgress` 每完成一批回调一次（done / total 均以「批」为单位），供扫描进度展示 ——
+ * 预取阶段没有单部进度，不显示批进度的话界面上看起来像卡死。
  */
-export async function fetchApi1Batch(rjs: string[]): Promise<Record<string, Api1Data>> {
+export async function fetchApi1Batch(
+  rjs: string[],
+  size = BATCH_SIZE,
+  onProgress?: (done: number, total: number) => void
+): Promise<Record<string, Api1Data>> {
   const out: Record<string, Api1Data> = {}
   const base = getDlsiteBase()
-  for (const chunk of splitRjs(rjs)) {
+  const chunks = splitRjs(rjs, size)
+  let done = 0
+  for (const chunk of chunks) {
     try {
       const data = await fetchJson<Record<string, Api1Data>>(buildBatchUrl(base, chunk))
       if (data && typeof data === 'object') {
@@ -141,6 +150,8 @@ export async function fetchApi1Batch(rjs: string[]): Promise<Record<string, Api1
         `[dlsite] 批量接口请求失败（${chunk.length} 个 RJ），这批退回逐个抓取: ${(e as Error).message}`
       )
     }
+    done++
+    onProgress?.(done, chunks.length)
     // 批次之间稍作间隔，避免连续几十个请求被风控
     await sleep(120)
   }
