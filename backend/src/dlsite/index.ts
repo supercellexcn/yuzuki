@@ -91,14 +91,32 @@ export function coverSourceOf(url: string): 'dlsite' | 'hvdb' | '' {
   return ''
 }
 
+/** HVDB 的两档兜底计划。 */
+export interface FallbackPlan {
+  /** 补全元数据（标题 / 社团 / 声优 / 标签）—— 只在 DLsite 明确没有这部作品时允许 */
+  meta: boolean
+  /** 只补封面 —— DLsite 正常返回但没给封面时也允许（封面不参与「污染」判定，且有 cover_source 标记） */
+  cover: boolean
+}
+
 /**
- * 兜底站点（HVDB）的启用条件：**只有 DLsite 明确没有这个作品（404）时才允许**。
- * 禁售（region_blocked）在上面已早退；网络异常 / 风控页（error / unknown）也不碰它 ——
- * 否则一次临时故障就会把兜底数据写进库，这正是要避免的污染。
+ * 兜底站点（HVDB）的启用条件。
+ *
+ * - **元数据**：只有 DLsite 明确 404（作品不存在 / 已下架）且字段不全时才补。
+ *   禁售（region_blocked）已早退；网络异常 / 风控页（error / unknown）一律不碰 ——
+ *   否则一次临时故障就会把兜底数据写进库，这正是要避免的污染。
+ * - **封面**：`ok` 或 `not_found` 且没有任何可用封面时允许补一次。
+ *   DLsite 官方原图已在前面尝试过（api2 / 作品页 og:image / api1），走到这里说明它没给，
+ *   此时 HVDB 的图是唯一来源。`cover_source` 会标成 `hvdb`，日后 DLsite 给出真封面会自动覆盖。
  */
-export function shouldUseFallbackSite(status: string | undefined, meta: Partial<DlsiteMeta>): boolean {
-  if (status !== 'not_found') return false
-  return !meta.title || !meta.circle || !meta.actors?.length || !meta.tags?.length
+export function fallbackPlan(status: string | undefined, meta: Partial<DlsiteMeta>): FallbackPlan {
+  const s = String(status || '')
+  if (s !== 'ok' && s !== 'not_found') return { meta: false, cover: false }
+  const missingMeta = !meta.title || !meta.circle || !meta.actors?.length || !meta.tags?.length
+  return {
+    meta: s === 'not_found' && missingMeta,
+    cover: !meta.cover_url,
+  }
 }
 
 /** api2 的 `language_editions.lang` → 项目内部的语言码与展示名。 */
@@ -166,11 +184,15 @@ export function api2RatingCount(detail: Api2Data['rate_count_detail']): number |
 }
 
 /** api2 的其它语言版本 → 项目内的翻译列表（跳过自身与非法 RJ 号）。 */
-export function api2Translations(list: Api2Edition[] | undefined, selfRj: string): DlsiteTranslation[] {
+export function api2Translations(list: unknown, selfRj: string): DlsiteTranslation[] {
   const out: DlsiteTranslation[] = []
   const self = selfRj.toUpperCase()
   const seen = new Set<string>()
-  for (const e of list || []) {
+  // 防御：线上出现过 `language_editions` 不是数组的形态（对象 / null），
+  // 直接 for...of 会抛 "(list || []) is not iterable"，一部作品就整轮抓取失败。
+  if (!Array.isArray(list)) return out
+  for (const raw of list) {
+    const e = (raw || {}) as Api2Edition
     const rj = String(e.workno || '').trim().toUpperCase()
     if (!/^RJ\d{6,10}$/.test(rj) || rj === self || seen.has(rj)) continue
     const key = String(e.lang || '').trim().toUpperCase()
@@ -204,8 +226,13 @@ export function applyApi2(meta: Partial<DlsiteMeta>, api2: Api2Data, base: strin
   // creaters 字段存在即说明接口明确回答过「有哪些声优」：此时为空 = 该作品确实没有声优
   // （CG 集 / 漫画等）。这决定后续扫描是否还要为「声优为空」重抓。
   if (api2.creaters !== undefined) meta.actors_confirmed = true
-  const genres = api2.genres?.length ? api2.genres : api2.genres_replaced
-  if (!meta.tags?.length && genres?.length) {
+  // 防御非数组形态（接口偶发返回对象），否则 .length / .map 会抛错
+  const genres = Array.isArray(api2.genres) && api2.genres.length
+    ? api2.genres
+    : Array.isArray(api2.genres_replaced)
+      ? api2.genres_replaced
+      : []
+  if (!meta.tags?.length && genres.length) {
     meta.tags = genres
       .map((g) => ({ name: (g.name || '').trim(), category: 'ジャンル' }))
       .filter((t) => t.name)
@@ -228,16 +255,22 @@ export interface FetchOptions {
    * 看「分類」区到底有没有分类。作品页也确认没有，才把 tags_confirmed 置 1。
    */
   verifyTags?: boolean
+  /**
+   * 库里还没有封面文件：api2 没给封面时抓一次作品页拿 `og:image`。
+   * DLsite 原图优先，作品页也拿不到才走 HVDB 兜底。
+   */
+  verifyCover?: boolean
 }
 
 /**
  * 是否还需要抓作品页。
  *
- * 除了「api2 没命中」这个必然情况，还有两种要抓：
+ * 除了「api2 没命中」这个必然情况，还有三种要抓：
  * 1. 声优为空，且接口连 `creaters` 字段都没给（给了空数组就说明确实没有声优）；
  * 2. 标签为空 —— **接口给的是空数组也不能直接当作「没有分类」**：有些作品的分类
  *    只出现在作品页的「分類」区（api2 为空）。传 `verifyTags` 时强制抓一次核实，
- *    抓完以页面结果为准，之后不再重复。
+ *    抓完以页面结果为准，之后不再重复；
+ * 3. 没有封面 —— 作品页的 `og:image` 是 DLsite 官方原图，比兜底站点更准（`verifyCover`）。
  */
 export function shouldFetchPage(
   api2: Api2Data | null,
@@ -248,7 +281,8 @@ export function shouldFetchPage(
   const genresKnown = api2?.genres !== undefined || api2?.genres_replaced !== undefined
   const wantActors = !meta.actors?.length && !creatorKnown
   const wantTags = !meta.tags?.length && (opts.verifyTags || !genresKnown)
-  return wantActors || wantTags
+  const wantCover = !meta.cover_url && opts.verifyCover === true
+  return wantActors || wantTags || wantCover
 }
 
 /** 作品页解析结果只补空缺：JSON 已经拿到的字段以 JSON 为准（结构更可靠）。 */function mergeParsed(meta: Partial<DlsiteMeta>, parsed: Partial<DlsiteMeta>, base: string): void {
@@ -400,19 +434,24 @@ export async function fetchWorkMeta(rj_code: string, opts: FetchOptions = {}): P
     if (name) meta.circle = name
   }
 
-  // 5) HVDB 兜底：只在 DLsite 确认「不存在 / 已下架」（404）时启用，其余状态一概不碰
-  if (shouldUseFallbackSite(meta.fetch_status, meta)) {
+  // 5) HVDB 兜底，分两档（判定见 fallbackPlan）：
+  //    - 元数据：只在 DLsite 明确 404 且字段不全时补；
+  //    - 封面：DLsite 正常返回（ok）或下架（not_found）但始终没给封面时补 ——
+  //      DLsite 原图（api2 / 作品页 og:image / api1）已经在前面全部尝试过。
+  const plan = fallbackPlan(meta.fetch_status, meta)
+  if (plan.meta || plan.cover) {
     const hvdb = await fetchHvdbMeta(rj_code)
     if (hvdb) {
-      if (!meta.title && hvdb.title) meta.title = hvdb.title
-      if (!meta.circle && hvdb.circle) meta.circle = hvdb.circle
-      // 封面优先级：DLsite(JSON/HTML) 有封面就用 DLsite 的，只有完全没有时才用 HVDB
-      if (hvdb.cover_url && !meta.cover_url) {
+      if (plan.meta) {
+        if (!meta.title && hvdb.title) meta.title = hvdb.title
+        if (!meta.circle && hvdb.circle) meta.circle = hvdb.circle
+        if (!meta.actors?.length && hvdb.actors.length) meta.actors = hvdb.actors
+        if (!meta.tags?.length && hvdb.tags.length) meta.tags = hvdb.tags
+      }
+      if (plan.cover && !meta.cover_url && hvdb.cover_url) {
         meta.cover_url = hvdb.cover_url
         meta.cover_source = coverSourceOf(hvdb.cover_url)
       }
-      if (!meta.actors?.length && hvdb.actors.length) meta.actors = hvdb.actors
-      if (!meta.tags?.length && hvdb.tags.length) meta.tags = hvdb.tags
     }
   }
 

@@ -229,7 +229,11 @@ function needsMetadataRefresh(db: DatabaseSync, existing: WorkRow): boolean {
   if (status === 'region_blocked') return true
   const missing = missingFieldsOf(db, existing)
   if (missing.length === 0) return false
-  if (status === 'not_found' && String(existing.title || '').trim()) return false
+  if (status === 'not_found' && String(existing.title || '').trim()) {
+    // DLsite 上确实没有这部作品，标题 / 声优 / 标签再抓也补不到。
+    // 唯一值得再抓的是**封面**：DLsite 没有，但兜底站点可能有（见 fallbackPlan 的 cover 档）。
+    return missing.includes('cover')
+  }
   return true
 }
 
@@ -331,8 +335,8 @@ async function createWork(
 ): Promise<void> {
   let meta: Partial<DlsiteMeta> = { rj_code: rj }
   try {
-    // 新作品没有确认记录：标签为空时抓一次作品页核实「分類」区
-    meta = { ...meta, ...(await fetchWorkMeta(rj, { verifyTags: true })) }
+    // 新作品没有确认记录、也没有封面：标签为空时核实「分類」，没封面时抓页面拿 og:image
+    meta = { ...meta, ...(await fetchWorkMeta(rj, { verifyTags: true, verifyCover: true })) }
   } catch (e) {
     console.warn(`[dlsite] ${rj} fetch failed: ${(e as Error).message}`)
     // 所有来源都没拿到（网络 / 风控）：先建成空记录，标 error 便于后台识别，下次扫描会重抓
@@ -481,8 +485,12 @@ async function refreshMetadata(db: DatabaseSync, workId: number, rj: string): Pr
   const cur = db
     .prepare('SELECT cover_path, cover_source, cover_modified, tags_confirmed FROM works WHERE id = ?')
     .get(workId) as unknown as CoverState & { tags_confirmed?: number }
-  // 标签还没确认过 → 让抓取流程在 api2 标签为空时抓一次作品页核实「分類」区
-  const meta = await fetchWorkMeta(rj, { verifyTags: Number(cur.tags_confirmed) !== 1 })
+  // 标签还没确认过 → 让抓取流程在 api2 标签为空时抓一次作品页核实「分類」区；
+  // 库里没有封面文件 → 让抓取流程抓一次作品页拿 og:image（DLsite 原图优先，HVDB 兜底）
+  const meta = await fetchWorkMeta(rj, {
+    verifyTags: Number(cur.tags_confirmed) !== 1,
+    verifyCover: !coverFileExists(String(cur.cover_path || '')),
+  })
   const cover = await resolveCover(rj, meta, cur, false)
   applyMeta(db, workId, meta, cover)
   applyCollections(db, workId, meta)
@@ -495,8 +503,8 @@ async function refreshMetadata(db: DatabaseSync, workId: number, rj: string): Pr
 export async function syncWork(db: DatabaseSync, workId: number, rj: string): Promise<void> {
   // 手动同步要的是实时数据：先丢掉这个作品的批量缓存，避免拿到上一轮扫描的旧数字
   dropCachedEntry(rj)
-  // 手动同步是「强制重抓」：标签为空时也抓一次作品页核实
-  const meta = await fetchWorkMeta(rj, { verifyTags: true })
+  // 手动同步是「强制重抓」：标签为空、没封面时都去作品页核实 / 取原图
+  const meta = await fetchWorkMeta(rj, { verifyTags: true, verifyCover: true })
   const cur = db
     .prepare('SELECT cover_path, cover_source, cover_modified FROM works WHERE id = ?')
     .get(workId) as unknown as CoverState
@@ -818,8 +826,11 @@ export async function redownloadCovers(
           result.statsUpdated++
           result.skipped++
         } else {
-          // 标签还没确认过的作品，本次抓取时会额外抓一次作品页核实「分類」区
-          const meta = await fetchWorkMeta(w.rj_code, { verifyTags: Number(w.tags_confirmed) !== 1 })
+          // 标签未确认 / 缺封面时，本次抓取会额外抓一次作品页（核实「分類」、取 og:image）
+          const meta = await fetchWorkMeta(w.rj_code, {
+            verifyTags: Number(w.tags_confirmed) !== 1,
+            verifyCover: !hasCover,
+          })
 
           if (refreshStats) {
             // 全库对齐：元数据 + 集合字段 + 封面来源一次写全，不留下兜底时期的残留

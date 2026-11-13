@@ -48,6 +48,21 @@ function cleanCircleName(raw: string): string {
   return first || s
 }
 
+/** 取页面里的封面图地址：兼容懒加载（data-src / data-original）与 og:image。 */
+function pickCoverSrc($: cheerio.CheerioAPI): string {
+  const selectors = [
+    'img[src*="WorkImages"]',
+    'img[data-src*="WorkImages"]',
+    'img[data-original*="WorkImages"]',
+  ]
+  for (const sel of selectors) {
+    const el = $(sel).not('[src*="loading"]').not('[data-src*="loading"]').first()
+    const src = el.attr('src') || el.attr('data-src') || el.attr('data-original') || ''
+    if (src) return src
+  }
+  return $('meta[property="og:image"]').first().attr('content') || ''
+}
+
 export async function fetchHvdbMeta(rj: string): Promise<HvdbData | null> {
   const id = rjToHvdbId(rj)
   if (!id) return null
@@ -60,11 +75,13 @@ export async function fetchHvdbMeta(rj: string): Promise<HvdbData | null> {
       $('input#Name').first().attr('value')?.trim() ||
       $('meta[property="og:title"]').first().attr('content')?.trim() ||
       ''
-    // 封面：HVDB 页面没有 og:image，封面是 <img src="/WorkImages/RJxxxxxx.jpg">（文件名用完整 RJ 号）
-    const cover_url =
-      absolutizeHvdbUrl($('img[src*="WorkImages"]').first().attr('src') || '', base) ||
-      absolutizeHvdbUrl($('meta[property="og:image"]').first().attr('content') || '', base) ||
-      `${base}/WorkImages/${String(rj).toUpperCase()}.jpg`
+    // 封面：优先页面上真实的 <img>（懒加载也兼容），其次 og:image；
+    // 都没有时才按 HVDB 的命名规则猜 —— **扩展名是 .webp**（实测 HVDB 存的是 webp，
+    // 早期猜 .jpg 必然 404，这是「HVDB 有封面却下载不到」的直接原因）。
+    const realSrc = pickCoverSrc($)
+    const cover_url = realSrc
+      ? absolutizeHvdbUrl(realSrc, base)
+      : `${base}/WorkImages/${String(rj).toUpperCase()}.webp`
     const circle = cleanCircleName($('a[href*="CircleWorks"]').first().text())
 
     const tags: Array<{ name: string; category: string }> = []
