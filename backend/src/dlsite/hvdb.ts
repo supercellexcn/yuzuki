@@ -79,9 +79,6 @@ export async function fetchHvdbMeta(rj: string): Promise<HvdbData | null> {
     // 都没有时才按 HVDB 的命名规则猜 —— **扩展名是 .webp**（实测 HVDB 存的是 webp，
     // 早期猜 .jpg 必然 404，这是「HVDB 有封面却下载不到」的直接原因）。
     const realSrc = pickCoverSrc($)
-    const cover_url = realSrc
-      ? absolutizeHvdbUrl(realSrc, base)
-      : `${base}/WorkImages/${String(rj).toUpperCase()}.webp`
     const circle = cleanCircleName($('a[href*="CircleWorks"]').first().text())
 
     const tags: Array<{ name: string; category: string }> = []
@@ -97,7 +94,18 @@ export async function fetchHvdbMeta(rj: string): Promise<HvdbData | null> {
       if (name && !/[A-Za-z]/.test(name) && !actors.includes(name)) actors.push(name)
     })
 
-    if (!title && !circle && !cover_url && !tags.length && !actors.length) return null
+    // 页面是否真的解析出了内容：什么都没有 → 大概率是风控挑战页 / 改版页。
+    // 此时**不能**再按命名规则猜封面 URL：猜出来的必然 404，还会让上层误以为「拿到了封面」。
+    const parsed = Boolean(title || circle || realSrc || tags.length || actors.length)
+    if (!parsed) {
+      console.warn(`[hvdb] ${rj} 页面未解析出内容（${html.length} 字节），可能被风控或站点改版`)
+      return null
+    }
+    const cover_url = realSrc
+      ? absolutizeHvdbUrl(realSrc, base)
+      : `${base}/WorkImages/${String(rj).toUpperCase()}.webp`
+
+    if (!title && !circle && !tags.length && !actors.length) return null
     return { title, circle, cover_url, tags, actors }
   } catch {
     return null

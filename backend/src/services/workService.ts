@@ -4,7 +4,8 @@ import crypto from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { getDb, transaction } from '../db/connection.js'
 import { getCoverDir } from '../settings.js'
-import { fetchWorkMeta, toNumber } from '../dlsite/index.js'
+import { fetchWorkMeta, toNumber, coverSourceOf } from '../dlsite/index.js'
+import { fetchHvdbMeta } from '../dlsite/hvdb.js'
 import { BATCH_SIZE, fetchApi1Batch } from '../dlsite/fallback.js'
 import { clearDynamicCache, dropCachedEntry, getCachedEntry } from '../dlsite/dynamicCache.js'
 import { downloadToFile } from '../dlsite/client.js'
@@ -438,13 +439,12 @@ async function createWork(
   }
 
   let coverPath = ''
+  let coverSrc = ''
   if (meta.cover_url) {
     onStage?.('下载封面')
-    try {
-      coverPath = await saveCover(rj, meta.cover_url)
-    } catch (e) {
-      console.warn(`[dlsite] ${rj} cover download failed: ${(e as Error).message}`)
-    }
+    const r = await downloadCoverWithFallback(rj, meta.cover_url, meta.cover_source || '')
+    coverPath = r.path
+    coverSrc = r.source
   }
 
   const now = new Date().toISOString()
@@ -465,7 +465,7 @@ async function createWork(
       meta.rating ?? null,
       meta.rating_count ?? null,
       coverPath,
-      coverPath ? meta.cover_source || '' : '',
+      coverPath ? coverSrc : '',
       folder,
       source,
       meta.actors_confirmed ? 1 : 0,
@@ -513,12 +513,10 @@ async function resolveCover(
   const shouldDownload = force || !exists || (source === 'dlsite' && cur.cover_source !== 'dlsite')
   if (!shouldDownload) return keep
 
-  try {
-    return { path: await saveCover(rj, meta.cover_url), source }
-  } catch (e) {
-    console.warn(`[dlsite] ${rj} cover download failed: ${(e as Error).message}`)
-    return keep
-  }
+  // URL 有值不代表能下：老作品图片会迁移、防盗链会拦、图片域也可能超时，
+  // 失败时自动改用兜底站再试一次（否则封面永远补不上）。
+  const r = await downloadCoverWithFallback(rj, meta.cover_url, source)
+  return r.path ? { path: r.path, source: r.source } : keep
 }
 
 /**
@@ -717,6 +715,42 @@ async function saveCover(rj: string, url: string): Promise<string> {
   await downloadToFile(url, dest, coverReferer(url))
   // 只存相对文件名，封面目录由 cover_dir 决定 → 库可跨机器/容器迁移
   return path.basename(dest)
+}
+
+/**
+ * 下载封面，失败时改用兜底站（HVDB）再试一次。
+ *
+ * 为什么需要：`fetchWorkMeta` 只负责「拿到封面 URL」，而 URL 存在不代表能下 ——
+ * 老作品图片会被 DLsite 迁移、防盗链会拦、日本节点到图片域也可能超时。
+ * 这种「有 URL 但下载失败」的情况之前直接放弃，于是封面永久缺失，库里的
+ * `cover_path` 一直是空、`missing` 永远带 cover，每轮重抓一遍还是空。
+ *
+ * 返回空 path 表示两条路都失败（调用方保留原封面）。
+ */
+async function downloadCoverWithFallback(
+  rj: string,
+  url: string,
+  source: string
+): Promise<{ path: string; source: string }> {
+  try {
+    return { path: await saveCover(rj, url), source }
+  } catch (e) {
+    console.warn(
+      `[dlsite] ${rj} 封面下载失败(${source || '未知来源'}): ${url} — ${(e as Error).message}`
+    )
+  }
+  if (source === 'hvdb') return { path: '', source: '' }
+
+  const hvdb = await fetchHvdbMeta(rj)
+  if (!hvdb?.cover_url) return { path: '', source: '' }
+  try {
+    const p = await saveCover(rj, hvdb.cover_url)
+    console.log(`[dlsite] ${rj} 封面改用兜底站成功: ${hvdb.cover_url}`)
+    return { path: p, source: coverSourceOf(hvdb.cover_url) }
+  } catch (e) {
+    console.warn(`[dlsite] ${rj} 兜底站封面也失败: ${hvdb.cover_url} — ${(e as Error).message}`)
+    return { path: '', source: '' }
+  }
 }
 
 const MANUAL_COVER_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'gif'] as const
@@ -1006,13 +1040,18 @@ export async function redownloadCovers(
           } else if (hasCover) {
             result.skipped++
           } else if (meta.cover_url) {
-            const p = await saveCover(w.rj_code, meta.cover_url)
-            // 封面文件缺失时重新下载的是原始封面：复位手动封面标记，回到「未修改」语义
-            db.prepare(
-              `UPDATE works SET cover_path = ?, cover_source = ?, cover_modified = 0,
-                 original_cover_path = '', updated_at = ? WHERE id = ?`
-            ).run(p, meta.cover_source || '', new Date().toISOString(), w.id)
-            result.downloaded++
+            // 下载失败时自动改用兜底站；两条路都失败就保持原样，下次再试
+            const r = await downloadCoverWithFallback(w.rj_code, meta.cover_url, meta.cover_source || '')
+            if (!r.path) {
+              result.skipped++
+            } else {
+              // 封面文件缺失时重新下载的是原始封面：复位手动封面标记，回到「未修改」语义
+              db.prepare(
+                `UPDATE works SET cover_path = ?, cover_source = ?, cover_modified = 0,
+                   original_cover_path = '', updated_at = ? WHERE id = ?`
+              ).run(r.path, r.source, new Date().toISOString(), w.id)
+              result.downloaded++
+            }
           } else {
             result.skipped++
           }
