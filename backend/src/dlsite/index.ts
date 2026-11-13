@@ -51,7 +51,7 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
   })
 
   // 1) HTML 主源：作品页 → 失败则试 announce 预告页（结构与作品页同构，复用同一解析器）
-  const meta: Partial<DlsiteMeta> = { rj_code, actors: [], tags: [] }
+  const meta: Partial<DlsiteMeta> = { rj_code, actors: [], tags: [], translations: [], age_rating: '' }
   try {
     const html = await fetchHtml(url, { retryOn404: false })
     Object.assign(meta, parseWorkPage(html, rj_code))
@@ -97,6 +97,10 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
         meta.tags = api2.genres
           .map((g) => ({ name: g.name.trim(), category: 'ジャンル' }))
           .filter((t) => t.name)
+      }
+      // 年龄分级兜底：页面「年齢指定」拿不到时用 api2 的 age_category（all / r18）
+      if (!meta.age_rating && api2.age_category) {
+        meta.age_rating = String(api2.age_category).toLowerCase().includes('r18') ? 'R18' : '全年齢'
       }
     }
   }

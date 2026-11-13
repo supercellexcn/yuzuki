@@ -4,7 +4,7 @@ import path from 'node:path'
 import { getDb } from '../db/connection.js'
 import { enrichWork } from '../services/enrich.js'
 import { setManualCover, restoreWorkCover, syncWork } from '../services/workService.js'
-import { CUSTOM_TAG, hiddenWorkFlag } from '../services/hidden.js'
+import { ALL_AGES_TAG, CUSTOM_TAG, hiddenWorkFlag } from '../services/hidden.js'
 
 export const adminRouter = Router()
 
@@ -32,8 +32,11 @@ adminRouter.get('/works', (req, res) => {
   const params: Array<string | number> = []
   if (q) {
     const like = `%${q.replace(/[\\%_]/g, (m) => '\\' + m)}%`
-    where.push(`(w.rj_code LIKE ? ESCAPE '\\' OR w.title LIKE ? ESCAPE '\\')`)
-    params.push(like, like)
+    where.push(
+      `(w.rj_code LIKE ? ESCAPE '\\' OR w.title LIKE ? ESCAPE '\\'
+        OR EXISTS(SELECT 1 FROM work_translations wtr WHERE wtr.work_id = w.id AND wtr.rj_code LIKE ? ESCAPE '\\'))`
+    )
+    params.push(like, like, like)
   }
   if (circle) {
     where.push('w.circle = ?')
@@ -90,10 +93,14 @@ adminRouter.get('/works/:rj', (req, res) => {
   const files = db
     .prepare('SELECT id, filename, rel_path, ext, kind, is_dir, size, sort_order FROM files WHERE work_id = ? ORDER BY sort_order')
     .all(Number(row.id))
+  const translations = db
+    .prepare('SELECT rj_code, language, language_label FROM work_translations WHERE work_id = ? ORDER BY language')
+    .all(Number(row.id))
   res.json({
     ...enrichWork(row),
     hidden: Number(row.hidden) === 1,
     cover_modified: Number(row.cover_modified) === 1,
+    translations,
     files,
   })
 })
@@ -265,7 +272,8 @@ adminRouter.get('/tags', (req, res) => {
        LEFT JOIN work_tags wt ON wt.tag_id = t.id
        ${where}
        GROUP BY t.id
-       ORDER BY (t.category = '${CUSTOM_TAG}') ASC, t.category, count DESC, t.name`
+       ORDER BY (t.name = '${ALL_AGES_TAG}' AND t.category = '${CUSTOM_TAG}') DESC,
+                (t.category = '${CUSTOM_TAG}') ASC, t.category, count DESC, t.name`
     )
     .all() as unknown as Array<{ name: string; category: string; count: number; hidden: number }>
   res.json(rows.map((r) => ({ name: r.name, category: r.category, count: Number(r.count), hidden: Number(r.hidden) === 1 })))
@@ -291,6 +299,7 @@ adminRouter.delete('/tags', (req, res) => {
   const name = String(req.query.name || '').trim()
   const category = String(req.query.category || '').trim()
   if (!name || category !== CUSTOM_TAG) return res.status(400).json({ error: '只能删除自定义标签' })
+  if (name === ALL_AGES_TAG) return res.status(400).json({ error: '内置标签「全年龄」不可删除' })
   const t = db.prepare('SELECT id FROM tags WHERE name = ? AND category = ?').get(name, CUSTOM_TAG) as
     | { id: number }
     | undefined

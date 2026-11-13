@@ -25,6 +25,8 @@ export interface Api2Data {
   regist_date?: string
   image_main?: { url?: string }
   work_image?: string
+  /** 年龄分级：all（全年龄）/ r18（成人向）。页面拿不到「年齢指定」时用它兜底 */
+  age_category?: string
   creaters?: {
     voice_by?: Api2Creator[]
     scenario_by?: Api2Creator[]

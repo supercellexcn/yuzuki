@@ -3,6 +3,13 @@ export interface WorkTag {
   category: string
 }
 
+/** 作品的其它语言版本（DLsite 翻译版为独立 RJ 号）。 */
+export interface WorkTranslation {
+  rj_code: string
+  language: string
+  language_label: string
+}
+
 export interface Work {
   id: number
   rj_code: string
@@ -34,6 +41,7 @@ export interface MediaFile {
 
 export interface WorkDetail extends Work {
   files: MediaFile[]
+  translations?: WorkTranslation[]
 }
 
 export interface WorksResponse {
@@ -127,6 +135,8 @@ export interface AppSettings {
   control_opacity: number
   card_size: CardSize
   card_width: number
+  /** 移动端锁定每行两列：勾选后移动端无视卡片尺寸，固定两列展示 */
+  card_mobile_two_col: boolean
   theme_color_nav: string
   theme_color_actor: string
   theme_color_tag: string
@@ -263,6 +273,8 @@ export interface FavoritesGrouped {
 // ---- 管理功能 ----
 /** 自定义标签的统一 category 值（与 DLsite/hvdb 的原生标签区分）。 */
 export const CUSTOM_TAG = 'custom'
+/** 内置「全年龄」标签：启动时播种，标签管理里不可删除。 */
+export const ALL_AGES_TAG = '全年龄'
 
 export interface AdminWork extends Work {
   hidden: boolean
@@ -271,6 +283,7 @@ export interface AdminWork extends Work {
 
 export interface AdminWorkDetail extends AdminWork {
   files: MediaFile[]
+  translations?: WorkTranslation[]
 }
 
 export interface AdminWorksResponse {

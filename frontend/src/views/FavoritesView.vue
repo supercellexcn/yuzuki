@@ -130,6 +130,12 @@ onMounted(async () => {
   grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
   gap: 16px;
 }
+/* 设置里勾选「移动端锁定两列」时：移动端无视卡片尺寸，固定两列 */
+@media (max-width: 760px) {
+  html.card-force-2col .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 .chips {
   display: flex;
   flex-wrap: wrap;

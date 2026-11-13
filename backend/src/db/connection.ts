@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { getConfig } from '../config.js'
 import { RECOMMENDATION_VERSION } from '../recommendation/similarity.js'
+import { ALL_AGES_TAG, CUSTOM_TAG } from '../services/hidden.js'
 
 let db: DatabaseSync | null = null
 
@@ -43,6 +44,16 @@ CREATE TABLE IF NOT EXISTS work_tags (
   work_id INTEGER NOT NULL REFERENCES works(id) ON DELETE CASCADE,
   tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
   PRIMARY KEY (work_id, tag_id)
+);
+
+-- 同一作品其它语言版本：DLsite 的翻译版是独立 RJ 号，这里记录 RJ 与语言，
+-- 供后续「按任意语言版本 RJ 搜索到该作品」等功能使用。
+CREATE TABLE IF NOT EXISTS work_translations (
+  work_id INTEGER NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+  rj_code TEXT NOT NULL,
+  language TEXT NOT NULL DEFAULT '',
+  language_label TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (work_id, rj_code)
 );
 
 CREATE TABLE IF NOT EXISTS files (
@@ -118,6 +129,7 @@ CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id, type, create
 CREATE INDEX IF NOT EXISTS idx_files_work ON files(work_id);
 CREATE INDEX IF NOT EXISTS idx_work_actors_work ON work_actors(work_id);
 CREATE INDEX IF NOT EXISTS idx_work_tags_work ON work_tags(work_id);
+CREATE INDEX IF NOT EXISTS idx_work_translations_rj ON work_translations(rj_code);
 CREATE INDEX IF NOT EXISTS idx_play_history_user ON play_history(user_id, played_at DESC);
 
 -- 推荐模块独立表（只读现有作品数据，不改动作品/标签/声优等原表）
@@ -166,6 +178,9 @@ const DEFAULTS: Array<[string, unknown]> = [
 ]
 
 function migrate(d: DatabaseSync): void {
+  // 内置「全年龄」标签：每次启动确保存在（标签管理里不允许删除，见 routes/admin.ts）
+  d.prepare('INSERT OR IGNORE INTO tags (name, category) VALUES (?, ?)').run(ALL_AGES_TAG, CUSTOM_TAG)
+
   const cols = d.prepare('PRAGMA table_info(files)').all() as unknown as Array<{ name: string }>
   if (!cols.some((c) => c.name === 'is_dir')) {
     d.exec('ALTER TABLE files ADD COLUMN is_dir INTEGER NOT NULL DEFAULT 0')

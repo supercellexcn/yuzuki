@@ -66,6 +66,8 @@ export interface AppSettings {
   // 作品卡片尺寸；custom 时使用 card_width（px）
   card_size: CardSize
   card_width: number
+  // 移动端锁定每行两列：勾选后移动端无视卡片尺寸，固定两列展示
+  card_mobile_two_col: boolean
   // 主题配色（hex，'' 表示使用内置默认色）：
   // theme_color_nav 是全站主题色（导航栏 / 强调色 / 面板底色…），另两个是标签专用色
   theme_color_nav: string
@@ -118,6 +120,7 @@ const DEFAULTS: AppSettings = {
   control_opacity: 70,
   card_size: 'medium',
   card_width: 180,
+  card_mobile_two_col: false,
   theme_color_nav: '',
   // 默认配色参考图：声优标签绿、类型标签橙（浅底深字）
   theme_color_actor: '#7BC86C',
@@ -213,6 +216,7 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
   const cardSize = String(patch.card_size ?? cur.card_size) as CardSize
   next.card_size = CARD_SIZES.includes(cardSize) ? cardSize : DEFAULTS.card_size
   next.card_width = Math.max(80, Math.min(480, Number(patch.card_width ?? cur.card_width) || DEFAULTS.card_width))
+  next.card_mobile_two_col = Boolean(patch.card_mobile_two_col ?? cur.card_mobile_two_col)
   next.theme_color_nav = normalizeColor(patch.theme_color_nav ?? cur.theme_color_nav, DEFAULTS.theme_color_nav)
   next.theme_color_actor = normalizeColor(patch.theme_color_actor ?? cur.theme_color_actor, DEFAULTS.theme_color_actor)
   next.theme_color_tag = normalizeColor(patch.theme_color_tag ?? cur.theme_color_tag, DEFAULTS.theme_color_tag)

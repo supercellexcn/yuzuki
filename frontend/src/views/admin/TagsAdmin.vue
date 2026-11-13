@@ -52,7 +52,7 @@
             {{ row.hidden ? '取消隐藏' : '隐藏' }}
           </el-button>
           <el-button
-            v-if="row.category === CUSTOM_TAG"
+            v-if="row.category === CUSTOM_TAG && row.name !== ALL_AGES_TAG"
             size="small"
             type="danger"
             plain
@@ -60,6 +60,7 @@
           >
             删除
           </el-button>
+          <el-tag v-else-if="row.name === ALL_AGES_TAG" size="small" type="info" effect="plain">内置</el-tag>
         </template>
       </el-table-column>
     </el-table>
@@ -83,7 +84,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getAdminTags, addCustomTag, deleteCustomTag, setHidden } from '../../api'
-import { CUSTOM_TAG } from '../../api/types'
+import { CUSTOM_TAG, ALL_AGES_TAG } from '../../api/types'
 import type { AdminTag, AdminTagFilter } from '../../api/types'
 import { useLibraryStore } from '../../stores/library'
 import { useAdminPageSize } from '../../composables/useAdminPageSize'

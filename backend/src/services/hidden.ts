@@ -3,6 +3,12 @@ import type { DatabaseSync } from 'node:sqlite'
 /** 自定义标签的统一 category 值（与 DLsite/hvdb 打上的原生标签区分）。 */
 export const CUSTOM_TAG = 'custom'
 
+/**
+ * 内置「全年龄」标签：启动时播种，标签管理里不可删除。
+ * 抓取到「年龄指定」不是 R18 的作品自动打上，全部标签筛选里置顶。
+ */
+export const ALL_AGES_TAG = '全年龄'
+
 // 内部子查询别名统一加 h 前缀，避免与调用方外层查询的同名表别名（如 t/wt）冲突。
 /**
  * 「作品未被隐藏」的 WHERE 片段。隐藏是级联的：作品自身被隐藏，或它的

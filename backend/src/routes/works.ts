@@ -49,13 +49,15 @@ function buildWhere(q: string, conds: FilterCond[]): WhereResult {
   const params: Array<string | number | null> = []
   if (q) {
     const like = `%${escapeLike(q)}%`
+    // 翻译版是独立 RJ：命中同一作品任意语言版本的 RJ 号也要能搜到它
     where.push(
       `(w.rj_code LIKE ? ESCAPE '\\' OR
         w.title LIKE ? ESCAPE '\\' OR
         EXISTS(SELECT 1 FROM work_actors wa JOIN actors a ON a.id = wa.actor_id WHERE wa.work_id = w.id AND a.name LIKE ? ESCAPE '\\') OR
-        EXISTS(SELECT 1 FROM work_tags wt JOIN tags t ON t.id = wt.tag_id WHERE wt.work_id = w.id AND t.name LIKE ? ESCAPE '\\'))`
+        EXISTS(SELECT 1 FROM work_tags wt JOIN tags t ON t.id = wt.tag_id WHERE wt.work_id = w.id AND t.name LIKE ? ESCAPE '\\') OR
+        EXISTS(SELECT 1 FROM work_translations wtr WHERE wtr.work_id = w.id AND wtr.rj_code LIKE ? ESCAPE '\\'))`
     )
-    params.push(like, like, like, like)
+    params.push(like, like, like, like, like)
   }
   for (const c of conds) {
     if (c.type === 'circle') {
@@ -138,7 +140,11 @@ worksRouter.get('/:rj', (req, res) => {
   const files = db
     .prepare('SELECT id, filename, rel_path, ext, kind, is_dir, size, sort_order FROM files WHERE work_id = ? ORDER BY sort_order')
     .all(Number(row.id))
-  res.json({ ...enrichWork(row, userId), files })
+  // 其它语言版本（翻译版是独立 RJ），供后续使用
+  const translations = db
+    .prepare('SELECT rj_code, language, language_label FROM work_translations WHERE work_id = ? ORDER BY language')
+    .all(Number(row.id))
+  res.json({ ...enrichWork(row, userId), translations, files })
 })
 
 // GET /api/works/:rj/recommendations?limit= —— 相关作品推荐（查询预计算结果，不做实时相似度计算）

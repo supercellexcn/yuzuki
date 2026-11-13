@@ -245,6 +245,17 @@
           />
         </div>
       </div>
+
+      <div class="setting-row">
+        <div class="setting-label">
+          <div>移动端锁定两列</div>
+          <div class="hint">
+            勾选后移动端（宽度 ≤ 760px）无视上面选的小 / 中 / 大 / 自定义宽度，
+            一律每行两列展示；不勾选则按卡片尺寸实际展示。
+          </div>
+        </div>
+        <el-checkbox v-model="cardMobileTwoCol">移动端锁定为每行两列</el-checkbox>
+      </div>
     </div>
 
     <div class="card">
@@ -472,6 +483,8 @@ const filelistOpacity = ref(62)
 const controlOpacity = ref(70)
 const cardSize = ref<CardSize>('medium')
 const cardWidth = ref(180)
+/** 移动端锁定每行两列（勾选后无视卡片尺寸） */
+const cardMobileTwoCol = ref(false)
 /** 声优标签不透明度（1-100） */
 const actorTagOpacity = ref(62)
 /** 类型标签不透明度（1-100） */
@@ -534,6 +547,7 @@ function currentPayload(): Partial<AppSettings> {
     control_opacity: controlOpacity.value,
     card_size: cardSize.value,
     card_width: cardWidth.value,
+    card_mobile_two_col: cardMobileTwoCol.value,
     theme_color_nav: (themeColors.theme_color_nav || '').trim(),
     theme_color_actor: (themeColors.theme_color_actor || '').trim(),
     theme_color_tag: (themeColors.theme_color_tag || '').trim(),
@@ -567,6 +581,7 @@ function applySettingsToForm(s: AppSettings | null) {
   controlOpacity.value = s.control_opacity
   cardSize.value = s.card_size
   cardWidth.value = s.card_width
+  cardMobileTwoCol.value = s.card_mobile_two_col === true
   themeColors.theme_color_nav = s.theme_color_nav
   themeColors.theme_color_actor = s.theme_color_actor
   themeColors.theme_color_tag = s.theme_color_tag
@@ -595,6 +610,7 @@ const formState = computed(() => [
   controlOpacity.value,
   cardSize.value,
   cardWidth.value,
+  cardMobileTwoCol.value,
   themeColors.theme_color_nav,
   themeColors.theme_color_actor,
   themeColors.theme_color_tag,

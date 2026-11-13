@@ -267,6 +267,9 @@ export function useAppearance() {
 
     const width = s.card_size === 'custom' ? s.card_width : CARD_MIN_WIDTH[s.card_size]
     root.style.setProperty('--card-min-width', `${width}px`)
+    // 移动端锁定两列：只加一个根类名，由各列表页的 media query 覆盖网格列数，
+    // 桌面端与未勾选时的行为完全不变。
+    root.classList.toggle('card-force-2col', s.card_mobile_two_col === true)
 
     // 全局动画时长：所有界面动画/过渡都读这个变量（0 就是关闭动画）。
     // 校验一次，避免设置里存了非法值时整个界面失去过渡。

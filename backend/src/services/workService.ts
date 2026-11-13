@@ -5,8 +5,8 @@ import { getDb, transaction } from '../db/connection.js'
 import { getCoverDir } from '../settings.js'
 import { fetchWorkMeta } from '../dlsite/index.js'
 import { downloadToFile } from '../dlsite/client.js'
-import type { DlsiteMeta, DlsiteTag } from '../dlsite/types.js'
-import { CUSTOM_TAG } from './hidden.js'
+import type { DlsiteMeta, DlsiteTag, DlsiteTranslation } from '../dlsite/types.js'
+import { ALL_AGES_TAG, CUSTOM_TAG } from './hidden.js'
 
 const AUDIO_EXTS = new Set(['mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'opus', 'wma', 'aiff'])
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'mkv', 'mov', 'avi', 'm4v', 'ts'])
@@ -152,6 +152,8 @@ async function createWork(
   db.prepare('UPDATE play_counts SET work_id = ? WHERE rj_code = ?').run(workId, rj)
   setActors(db, workId, meta.actors || [])
   setTags(db, workId, meta.tags || [])
+  syncAllAgesTag(db, workId, meta.age_rating)
+  setTranslations(db, workId, meta.translations)
 }
 
 async function refreshMetadata(db: DatabaseSync, workId: number, rj: string): Promise<void> {
@@ -174,6 +176,8 @@ async function refreshMetadata(db: DatabaseSync, workId: number, rj: string): Pr
   )
   setActors(db, workId, meta.actors || [])
   setTags(db, workId, meta.tags || [])
+  syncAllAgesTag(db, workId, meta.age_rating)
+  setTranslations(db, workId, meta.translations)
 }
 
 /**
@@ -207,6 +211,8 @@ export async function syncWork(db: DatabaseSync, workId: number, rj: string): Pr
   )
   setActors(db, workId, meta.actors || [])
   setTags(db, workId, meta.tags || [])
+  syncAllAgesTag(db, workId, meta.age_rating)
+  setTranslations(db, workId, meta.translations)
 }
 
 function setActors(db: DatabaseSync, workId: number, names: string[]): void {
@@ -248,6 +254,50 @@ function setTags(db: DatabaseSync, workId: number, tags: DlsiteTag[]): void {
       insertTag.run(name, category)
       const row = getTag.get(name, category) as { id: number } | undefined
       if (row) link.run(workId, row.id)
+    }
+  })
+}
+
+/** 「年龄指定」是否代表全年龄；null = 没抓到（缺字段），不据此改标签。 */
+function allAgesStatus(ageRating: string | undefined): boolean | null {
+  const v = (ageRating || '').trim()
+  if (!v) return null
+  return !/R18|成人|18禁|adult/i.test(v)
+}
+
+/** 取下（不存在则创建）某个自定义标签的 id。 */
+function customTagId(db: DatabaseSync, name: string): number {
+  db.prepare('INSERT OR IGNORE INTO tags (name, category) VALUES (?, ?)').run(name, CUSTOM_TAG)
+  return (db.prepare('SELECT id FROM tags WHERE name = ? AND category = ?').get(name, CUSTOM_TAG) as { id: number }).id
+}
+
+/**
+ * 维护作品上的内置「全年龄」标签：年龄指定非 R18 就关联，R18 就摘掉，
+ * 抓不到年龄时保持原状（不误标 R18 作品）。
+ */
+function syncAllAgesTag(db: DatabaseSync, workId: number, ageRating: string | undefined): void {
+  const status = allAgesStatus(ageRating)
+  if (status === null) return
+  const tagId = customTagId(db, ALL_AGES_TAG)
+  if (status) {
+    db.prepare('INSERT OR IGNORE INTO work_tags (work_id, tag_id) VALUES (?, ?)').run(workId, tagId)
+  } else {
+    db.prepare('DELETE FROM work_tags WHERE work_id = ? AND tag_id = ?').run(workId, tagId)
+  }
+}
+
+/** 重建作品的其它语言版本列表（RJ 号 + 语言）。 */
+function setTranslations(db: DatabaseSync, workId: number, list: DlsiteTranslation[] | undefined): void {
+  const del = db.prepare('DELETE FROM work_translations WHERE work_id = ?')
+  const ins = db.prepare(
+    'INSERT OR IGNORE INTO work_translations (work_id, rj_code, language, language_label) VALUES (?, ?, ?, ?)'
+  )
+  transaction(db, () => {
+    del.run(workId)
+    for (const t of list || []) {
+      const rj = (t.rj_code || '').trim().toUpperCase()
+      if (!/^RJ\d{6,10}$/.test(rj)) continue
+      ins.run(workId, rj, t.language || '', t.language_label || '')
     }
   })
 }
