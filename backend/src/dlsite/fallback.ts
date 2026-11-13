@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio'
 import { getSettings } from '../settings.js'
 import { fetchHtml, fetchJson } from './client.js'
+import { cacheBatchEntries, getCachedEntry, type BatchEntry } from './dynamicCache.js'
 
 /**
  * 作品页 HTML 获取失败（下架/404）时的备用数据源，逻辑参考 VoiceLinks 插件：
@@ -69,25 +70,21 @@ export interface Api2Data {
   update_date?: string
 }
 
-export interface Api1Data {
-  work_name?: string
-  maker_id?: number | string
-  regist_date?: string
-  work_image?: string
-  dl_count?: string | number
-  /** 价格（日元）；下架作品也能返回 */
-  price?: string | number
-  /** 原价（日元），与 price 的区别在于不受折扣影响 */
-  official_price?: string | number
-  /** 平均评分（两位小数）与评分人数 / 文字评论数 */
-  rate_average_2dp?: number | string
-  rate_count?: number | string
-  review_count?: number | string
-  is_sale?: boolean
-}
+/**
+ * api1 `/maniax/product/info/ajax` 的条目。与 touch 动态数据、批量接口返回同一套字段，
+ * 因此直接复用缓存模块的条目定义（`BatchEntry` 就是 api1 的字段集合）。
+ */
+export type Api1Data = BatchEntry
+
+/** 批量接口单次最多查多少个 RJ：50 个约 700 字符，远低于 URL 长度限制。 */
+export const BATCH_SIZE = 50
 
 function getDlsiteBase(): string {
   return (getSettings().dlsite_base || 'https://www.dlsite.com').replace(/\/+$/, '')
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
 }
 
 /**
@@ -110,8 +107,51 @@ export async function fetchApi2(rj: string): Promise<Api2Data | null> {
   }
 }
 
-/** 惰性调用时用：下架作品也能返回元数据。 */
+/** 把 RJ 列表按批量上限切块。 */
+export function splitRjs(rjs: string[], size = BATCH_SIZE): string[][] {
+  const out: string[][] = []
+  for (let i = 0; i < rjs.length; i += size) out.push(rjs.slice(i, i + size))
+  return out
+}
+
+/** 批量接口地址：多个 RJ 用逗号分隔后整体编码（与线上验证过的请求完全一致）。 */
+export function buildBatchUrl(base: string, rjs: string[]): string {
+  return `${base}/maniax/product/info/ajax?product_id=${encodeURIComponent(rjs.join(','))}`
+}
+
+/**
+ * 批量抓取动态数据并写入缓存。
+ *
+ * 一次请求最多 50 个 RJ，返回 `{ RJ: {...} }`；不存在的 RJ 直接不出现（不影响其它条目，
+ * 线上已验证）。**任何一批失败都不抛错**：跳过这一批，逐部流程会退回单独请求。
+ */
+export async function fetchApi1Batch(rjs: string[]): Promise<Record<string, Api1Data>> {
+  const out: Record<string, Api1Data> = {}
+  const base = getDlsiteBase()
+  for (const chunk of splitRjs(rjs)) {
+    try {
+      const data = await fetchJson<Record<string, Api1Data>>(buildBatchUrl(base, chunk))
+      if (data && typeof data === 'object') {
+        for (const [rj, item] of Object.entries(data)) {
+          if (item && typeof item === 'object') out[rj.toUpperCase()] = item
+        }
+      }
+    } catch (e) {
+      console.warn(
+        `[dlsite] 批量接口请求失败（${chunk.length} 个 RJ），这批退回逐个抓取: ${(e as Error).message}`
+      )
+    }
+    // 批次之间稍作间隔，避免连续几十个请求被风控
+    await sleep(120)
+  }
+  cacheBatchEntries(out)
+  return out
+}
+
+/** 惰性调用时用：下架作品也能返回元数据。批量预取命中时直接返回缓存，不再发请求。 */
 export async function fetchApi1(rj: string): Promise<Api1Data | null> {
+  const cached = getCachedEntry(rj)
+  if (cached) return cached
   try {
     const base = getDlsiteBase()
     const data = await fetchJson<Record<string, Api1Data>>(
@@ -119,6 +159,8 @@ export async function fetchApi1(rj: string): Promise<Api1Data | null> {
     )
     const item = data?.[rj]
     if (!item || typeof item !== 'object' || Object.keys(item).length === 0) return null
+    // 顺手入缓存：同一轮扫描里再要这个作品就不必重复请求
+    cacheBatchEntries({ [rj]: item })
     return item
   } catch {
     return null

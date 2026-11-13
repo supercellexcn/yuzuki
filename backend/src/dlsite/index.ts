@@ -4,6 +4,7 @@ import { parseWorkPage } from './parser.js'
 import { fetchApi1, fetchApi2, fetchCircleName, absolutizeCover, normalizeReleaseDate } from './fallback.js'
 import type { Api1Data, Api2Data, Api2Creator, Api2Edition } from './fallback.js'
 import { fetchHvdbMeta } from './hvdb.js'
+import { getCachedEntry } from './dynamicCache.js'
 import type { DlsiteFetchStatus, DlsiteMeta, DlsiteTranslation } from './types.js'
 
 export interface DlsiteAjaxItem {
@@ -266,18 +267,25 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
     fetch_status: 'unknown',
   }
 
-  // 1) api2 与动态数据并行发出，省一次往返；touch 失败不影响主体
-  const touchPromise = fetchJson<Record<string, DlsiteAjaxItem>>(
-    `${base}/maniax-touch/product/info/ajax?product_id=${rj_code}`
-  ).catch((e) => {
-    console.warn(`[dlsite] ${rj_code} dynamic meta failed: ${(e as Error).message}`)
-    return null
-  })
+  // 1) api2 与动态数据并行发出，省一次往返；touch 失败不影响主体。
+  //    动态数据若已被批量预取进缓存（扫描 / 全库刷新开始前按 50 个一批拉过），
+  //    直接用缓存，不再单独请求 —— 这是把 N 次请求压成 N/50 的关键。
+  const cachedDynamic = getCachedEntry(rj_code)
+  const touchPromise: Promise<DlsiteAjaxItem | null> = cachedDynamic
+    ? Promise.resolve(cachedDynamic as DlsiteAjaxItem)
+    : fetchJson<Record<string, DlsiteAjaxItem>>(
+        `${base}/maniax-touch/product/info/ajax?product_id=${rj_code}`
+      )
+        .then((data) => data?.[rj_code] ?? null)
+        .catch((e) => {
+          console.warn(`[dlsite] ${rj_code} dynamic meta failed: ${(e as Error).message}`)
+          return null
+        })
   const [api2, touch] = await Promise.all([fetchApi2(rj_code), touchPromise])
 
   const api2Ok = Boolean(api2 && (api2.work_name || api2.workno))
   // 动态数据（实时销量 / 精确评分）优先写入，api2 只补静态字段里还空着的项
-  applyDynamic(meta, touch?.[rj_code])
+  applyDynamic(meta, touch)
   if (api2 && api2Ok) applyApi2(meta, api2, base)
 
   // 2) api2 命中：静态字段已齐，唯一还要抓作品页的原因是「接口形态变了」——

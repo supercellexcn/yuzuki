@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { getDb, transaction } from '../db/connection.js'
 import { getSettings } from '../settings.js'
-import { upsertWorkFolder } from '../services/workService.js'
+import { upsertWorkFolder, prefetchDynamic } from '../services/workService.js'
 
 export interface ScanResult {
   total: number
@@ -78,6 +78,24 @@ export async function scanAll(
   let nextIndex = 0
   const workers: ScanWorkerStatus[] = Array.from({ length: concurrency }, (_, id) => ({ id, rj: '', stage: '空闲' }))
   const emitWorkers = () => onWorker?.(workers.map((w) => ({ ...w })))
+
+  // 批量预取：按 50 个一批把动态数据拉回缓存，逐部流程用同一份数据就不再单独请求。
+  // 只预取「确实要抓」的作品（新作品 / 信息不全 / 上次被地区禁售），完整作品本来就会被跳过。
+  // 预取失败不影响扫描：逐部流程会退回单独请求。
+  for (const w of workers) w.stage = '预取动态数据'
+  emitWorkers()
+  try {
+    const pf = await prefetchDynamic(unique.map((f) => f.rj), 'missing')
+    if (pf.candidates) {
+      console.log(
+        `[yuzuki] 批量预取动态数据：${pf.candidates} 个候选 / ${pf.batches} 次请求，返回 ${pf.entries} 条`
+      )
+    }
+  } catch (e) {
+    console.warn(`[yuzuki] 批量预取动态数据失败，退回逐个抓取: ${(e as Error).message}`)
+  }
+  for (const w of workers) w.stage = '空闲'
+  emitWorkers()
 
   const waitIfPaused = async () => {
     if (!control?.isPaused()) return

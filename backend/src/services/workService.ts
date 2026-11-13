@@ -3,7 +3,9 @@ import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { getDb, transaction } from '../db/connection.js'
 import { getCoverDir } from '../settings.js'
-import { fetchWorkMeta } from '../dlsite/index.js'
+import { fetchWorkMeta, toNumber } from '../dlsite/index.js'
+import { BATCH_SIZE, fetchApi1Batch } from '../dlsite/fallback.js'
+import { clearDynamicCache, dropCachedEntry, getCachedEntry } from '../dlsite/dynamicCache.js'
 import { downloadToFile } from '../dlsite/client.js'
 import type { DlsiteMeta, DlsiteTag, DlsiteTranslation } from '../dlsite/types.js'
 import { ALL_AGES_TAG, CUSTOM_TAG } from './hidden.js'
@@ -44,6 +46,8 @@ interface WorkRow {
   fetch_status: string
   /** 当前封面文件来源：'' / dlsite / hvdb */
   cover_source: string
+  /** 1 = 用户手动设置过封面，抓取时不得覆盖 */
+  cover_modified?: number
   updated_at: string
 }
 
@@ -163,6 +167,75 @@ function needsMetadataRefresh(db: DatabaseSync, existing: WorkRow): boolean {
   if (missing.length === 0) return false
   if (status === 'not_found' && String(existing.title || '').trim()) return false
   return true
+}
+
+/**
+ * 「干净作品」：上次是 DLsite 正常返回、封面也来自 DLsite、字段齐全。
+ * 这类作品这次刷新只剩价格 / 评分 / 评论数 / 销量会变，用批量接口的数字写一遍即可，
+ * 不需要再请求 api2 / 作品页；其余作品（含升级前的老数据，fetch_status 为空）仍走完整对齐，
+ * 这样既省请求，又能把早前被兜底站点污染的数据修回来。
+ */
+export function isCleanWork(db: DatabaseSync, w: WorkRow): boolean {
+  if (String(w.fetch_status || '') !== 'ok') return false
+  if (String(w.cover_source || '') !== 'dlsite') return false
+  if (Number(w.cover_modified) === 1) return false
+  return missingFieldsOf(db, w).length === 0
+}
+
+export interface PrefetchResult {
+  /** 进入批量请求的候选作品数 */
+  candidates: number
+  /** 批量接口实际返回的条目数（不存在 / 地区禁售的作品不会返回） */
+  entries: number
+  /** 发出的批量请求次数 */
+  batches: number
+}
+
+/**
+ * 批量预取动态数据到缓存。
+ *
+ * mode='missing'（扫描用）：只预取本次确实要抓的作品 —— 库里没有的、信息不全的、
+ * 上次被地区禁售的。已经完整的作品本来就会被跳过，没必要替它们发请求。
+ * mode='all'（全库刷新用）：候选全部预取。
+ *
+ * 批量接口返回的条目会被逐部流程（touch 动态数据、api1 兜底）直接命中，
+ * 于是 N 部作品的动态数据只花 N/50 次请求。
+ */
+export async function prefetchDynamic(
+  rjs: string[],
+  mode: 'missing' | 'all' = 'missing'
+): Promise<PrefetchResult> {
+  const targets = pickRefreshTargets(rjs, mode)
+  if (!targets.length) return { candidates: 0, entries: 0, batches: 0 }
+
+  // 新一轮预取：先清掉上一轮的残留，避免旧数据混进来
+  clearDynamicCache()
+  const entries = await fetchApi1Batch(targets)
+  return {
+    candidates: targets.length,
+    entries: Object.keys(entries).length,
+    batches: Math.ceil(targets.length / BATCH_SIZE),
+  }
+}
+
+/** 选出要进批量预取的作品（去重、去空），供 prefetchDynamic 与测试断言共用。 */
+export function pickRefreshTargets(rjs: string[], mode: 'missing' | 'all' = 'missing'): string[] {
+  const db = getDb()
+  const stmt = db.prepare('SELECT * FROM works WHERE rj_code = ?')
+  const targets: string[] = []
+  const seen = new Set<string>()
+  for (const rj of rjs) {
+    const key = rj.trim().toUpperCase()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    if (mode === 'all') {
+      targets.push(key)
+      continue
+    }
+    const row = stmt.get(key) as unknown as WorkRow | undefined
+    if (!row || needsMetadataRefresh(db, row)) targets.push(key)
+  }
+  return targets
 }
 
 /** 补抓元数据，最多重试 2 次，失败记录日志。 */
@@ -346,6 +419,8 @@ async function refreshMetadata(db: DatabaseSync, workId: number, rj: string): Pr
  * 保留用户手动添加的自定义标签；作品为手动封面（cover_modified=1）时不覆盖封面。
  */
 export async function syncWork(db: DatabaseSync, workId: number, rj: string): Promise<void> {
+  // 手动同步要的是实时数据：先丢掉这个作品的批量缓存，避免拿到上一轮扫描的旧数字
+  dropCachedEntry(rj)
   const meta = await fetchWorkMeta(rj)
   const cur = db
     .prepare('SELECT cover_path, cover_source, cover_modified FROM works WHERE id = ?')
@@ -584,13 +659,35 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * 用批量预取的缓存写动态四项（价格 / 评分 / 评论数 / 销量）。
+ * 抓不到的项（null）保留旧值，不会把已有数字清空。
+ */
+function writeDynamicFromCache(db: DatabaseSync, workId: number, rj: string): void {
+  const item = getCachedEntry(rj)
+  if (!item) return
+  db.prepare(
+    `UPDATE works SET price = COALESCE(?, price), rating = COALESCE(?, rating),
+       rating_count = COALESCE(?, rating_count), sales_count = COALESCE(?, sales_count),
+       updated_at = ? WHERE id = ?`
+  ).run(
+    toNumber(item.official_price) ?? toNumber(item.price),
+    toNumber(item.rate_average_2dp),
+    toNumber(item.rate_count) ?? toNumber(item.review_count),
+    toNumber(item.dl_count),
+    new Date().toISOString(),
+    workId
+  )
+}
+
+/**
  * 重新下载缺失的封面：遍历所有作品，若封面文件在当前封面目录里不存在，
  * 则抓取 DLsite 元数据并下载。已有封面文件的作品跳过。支持并发。
  *
- * refreshStats = true 时对**所有**作品都抓一次元数据，按当前线路的 DLsite 结果整体对齐：
- * 动态数据（价格 / 评分 / 评论数 / 销量）、声优、标签、封面来源一起刷新。
- * 这同时是「修复此前被兜底站点污染的数据」的入口 —— 换到可用线路后跑一次，
- * 地区禁售时期由 HVDB 补上的标题 / 社团 / 标签 / 封面都会被 DLsite 的真实数据覆盖。
+ * refreshStats = true 时遍历**所有**作品，按当前线路的 DLsite 结果对齐：
+ * - 干净作品（上次 DL 正常、封面来自 DLsite、字段齐全）：只有价格 / 评分 / 评论数 / 销量会变，
+ *   直接用批量预取的缓存写这四项，一次网络请求都不发；
+ * - 其余作品（含升级前的老数据）：完整抓取一次，元数据 + 声优 + 标签 + 封面来源整体覆盖。
+ *   这同时是「修复被兜底站点污染的数据」的入口 —— 换到可用线路后跑一次即可修回来。
  */
 export async function redownloadCovers(
   onProgress: (current: string, done: number, total: number) => void,
@@ -598,13 +695,7 @@ export async function redownloadCovers(
   refreshStats = false
 ): Promise<CoverRedownloadResult> {
   const db = getDb()
-  const works = db.prepare('SELECT id, rj_code, cover_path, cover_source, cover_modified FROM works').all() as unknown as Array<{
-    id: number
-    rj_code: string
-    cover_path: string
-    cover_source: string
-    cover_modified: number
-  }>
+  const works = db.prepare('SELECT * FROM works').all() as unknown as WorkRow[]
   const coversDir = getCoverDir()
   const result: CoverRedownloadResult = {
     total: works.length,
@@ -612,6 +703,24 @@ export async function redownloadCovers(
     skipped: 0,
     statsUpdated: 0,
     errors: [],
+  }
+
+  // 逐部流程要抓元数据的作品：封面文件缺失（本次要补封面）或勾选了刷新动态数据（全库）。
+  // 先按 50 个一批把动态数据预取进缓存，逐部流程（touch / api1）命中缓存就不再单独请求。
+  const needFetch = works.filter(
+    (w) => refreshStats || !w.cover_path || !fs.existsSync(path.join(coversDir, path.basename(w.cover_path)))
+  )
+  if (needFetch.length) {
+    onProgress('预取动态数据', 0, works.length)
+    try {
+      const pf = await prefetchDynamic(needFetch.map((w) => w.rj_code), 'all')
+      console.log(
+        `[yuzuki] 批量预取动态数据：${pf.candidates} 个候选 / ${pf.batches} 次请求，返回 ${pf.entries} 条`
+      )
+    } catch (e) {
+      // 预取失败不影响主流程：逐部流程会退回单独请求
+      console.warn(`[yuzuki] 批量预取动态数据失败，退回逐个抓取: ${(e as Error).message}`)
+    }
   }
 
   let done = 0
@@ -628,6 +737,11 @@ export async function redownloadCovers(
 
         if (hasCover && !refreshStats) {
           result.skipped++
+        } else if (refreshStats && isCleanWork(db, w) && getCachedEntry(w.rj_code)) {
+          // 干净作品：批量缓存里已有这次的价格 / 评分 / 评论数 / 销量，直接写，不请求 api2 / 作品页
+          writeDynamicFromCache(db, w.id, w.rj_code)
+          result.statsUpdated++
+          result.skipped++
         } else {
           const meta = await fetchWorkMeta(w.rj_code)
 
@@ -636,7 +750,7 @@ export async function redownloadCovers(
             const cover = await resolveCover(
               w.rj_code,
               meta,
-              { cover_path: w.cover_path, cover_source: w.cover_source, cover_modified: w.cover_modified },
+              { cover_path: w.cover_path, cover_source: w.cover_source, cover_modified: Number(w.cover_modified) || 0 },
               false
             )
             applyMeta(db, w.id, meta, cover)
