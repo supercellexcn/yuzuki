@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS works (
   last_scan_result TEXT NOT NULL DEFAULT '',
   /** 上次扫描处置的时间（ISO 字符串，空表示还没被扫描处理过） */
   last_scan_at TEXT NOT NULL DEFAULT '',
+  /**
+   * 文件夹目录树的签名（各子目录 mtimeMs 的哈希）。签名没变说明文件夹结构没动过，
+   * 扫描时连 readdir + stat 都跳过 —— 媒体库几万部作品时这能省掉每轮几十万次 IO。
+   */
+  folder_sig TEXT NOT NULL DEFAULT '',
   added_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -192,6 +197,12 @@ CREATE TABLE IF NOT EXISTS recommendation_tag_stats (
   idf_score REAL NOT NULL,
   calculated_at TEXT NOT NULL
 );
+
+-- 推荐模块的元信息（如「输入指纹」）：作品数据没变时跳过整次计算
+CREATE TABLE IF NOT EXISTS recommendation_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `
 
 const DEFAULTS: Array<[string, unknown]> = [
@@ -257,6 +268,10 @@ function migrate(d: DatabaseSync): void {
   }
   if (!w.some((c) => c.name === 'last_scan_at')) {
     d.exec("ALTER TABLE works ADD COLUMN last_scan_at TEXT NOT NULL DEFAULT ''")
+  }
+  // 目录树签名：老数据为空 → 下一轮扫描各自计算一次并写入，此后目录没动就跳过文件遍历
+  if (!w.some((c) => c.name === 'folder_sig')) {
+    d.exec("ALTER TABLE works ADD COLUMN folder_sig TEXT NOT NULL DEFAULT ''")
   }
 
   // play_history.rj_code：以 RJ 号作为稳定关联键，作品被删后重新入库时能接回历史

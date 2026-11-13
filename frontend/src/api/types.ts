@@ -267,6 +267,8 @@ export interface RecommendationJob {
   done: number
   total: number
   rows: number
+  /** true = 作品数据未变化，本次直接跳过（没有重算） */
+  skipped: boolean
   errors: string[]
   startedAt: string | null
   finishedAt: string | null

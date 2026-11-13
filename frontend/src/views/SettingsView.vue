@@ -110,6 +110,9 @@
             {{ recJob.status }}
           </el-tag>
           <span v-if="recJob.status === 'running'" class="current">正在计算 {{ recJob.done }}/{{ recJob.total }}</span>
+          <span v-else-if="recJob.status === 'done' && recJob.skipped" class="current">
+            作品数据未变化，已跳过计算（{{ recJob.total }} 部）
+          </span>
           <span v-else-if="recJob.status === 'done'" class="current">
             已为 {{ recJob.total }} 个作品生成 {{ recJob.rows }} 条推荐
           </span>
@@ -906,7 +909,9 @@ function connectEvents() {
   es.addEventListener('recommendation', (e) => {
     const prev = recJob.value?.status
     recJob.value = JSON.parse((e as MessageEvent).data)
-    if (prev === 'running' && recJob.value?.status === 'done') ElMessage.success('推荐计算完成')
+    if (prev === 'running' && recJob.value?.status === 'done') {
+      ElMessage.success(recJob.value.skipped ? '作品数据未变化，已跳过推荐计算' : '推荐计算完成')
+    }
     if (prev === 'running' && recJob.value?.status === 'error') ElMessage.error('推荐计算失败')
   })
 

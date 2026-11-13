@@ -191,6 +191,8 @@ export interface RecommendationJob {
   done: number
   total: number
   rows: number
+  /** true = 作品数据未变化，本次直接跳过（没有重算） */
+  skipped: boolean
   errors: string[]
   startedAt: string | null
   finishedAt: string | null
@@ -201,6 +203,7 @@ const recommendationJob: RecommendationJob = {
   done: 0,
   total: 0,
   rows: 0,
+  skipped: false,
   errors: [],
   startedAt: null,
   finishedAt: null,
@@ -210,33 +213,40 @@ export function getRecommendationJob(): RecommendationJob {
   return { ...recommendationJob, errors: [...recommendationJob.errors] }
 }
 
-export async function startRecommendationCalc(): Promise<boolean> {
+/**
+ * 启动推荐计算。`force = false`（扫描后自动触发）时会先比对输入指纹，
+ * 作品数据没变就直接跳过；手动「立即计算」传 true 强制执行。
+ */
+export async function startRecommendationCalc(force = false): Promise<boolean> {
   if (recommendationJob.status === 'running') return false
   recommendationJob.status = 'running'
   recommendationJob.done = 0
   recommendationJob.total = 0
   recommendationJob.rows = 0
+  recommendationJob.skipped = false
   recommendationJob.errors = []
   recommendationJob.startedAt = new Date().toISOString()
   recommendationJob.finishedAt = null
   // 与扫描/封面重下一致：后台执行，立即返回
-  void runRecommendationCalc()
+  void runRecommendationCalc(force)
   return true
 }
 
-async function runRecommendationCalc(): Promise<void> {
+async function runRecommendationCalc(force: boolean): Promise<void> {
   // 先让出一轮事件循环再开始计算：保证「启动推荐计算」的 HTTP 响应（以及服务启动
   // 阶段的 app.listen）先于计算执行，否则计算会同步占死事件循环，接口全部超时。
   await new Promise<void>((resolve) => setImmediate(resolve))
+  publishJobNow()
   try {
     const r = await calculateRecommendations((done, total) => {
       recommendationJob.done = done
       recommendationJob.total = total
       publishJob('recommendation')
-    })
+    }, force)
     recommendationJob.done = r.works
     recommendationJob.total = r.works
     recommendationJob.rows = r.rows
+    recommendationJob.skipped = r.skipped === true
     recommendationJob.errors.push(...r.errors)
     recommendationJob.status = 'done'
   } catch (e) {

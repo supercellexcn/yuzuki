@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { getDb, transaction } from '../db/connection.js'
 import { getSettings } from '../settings.js'
-import { upsertWorkFolder, prefetchDynamic } from '../services/workService.js'
+import { upsertWorkFolder, prefetchDynamic, buildScanContext } from '../services/workService.js'
 
 export interface ScanResult {
   total: number
@@ -126,6 +126,10 @@ export async function scanAll(
   for (const w of workers) w.stage = '空闲'
   emitWorkers()
 
+  // 扫描上下文：一次性把 works 行、标签数、声优数、封面文件名读进内存。
+  // 之后每部作品的完整性判定都是内存查找，不再逐部查库（7685 部 ≈ 3 万条 SQL）。
+  const ctx = buildScanContext(getDb())
+
   const waitIfPaused = async () => {
     if (!control?.isPaused()) return
     for (const w of workers) w.stage = '已暂停'
@@ -143,10 +147,16 @@ export async function scanAll(
       emitWorkers()
       onProgress(f.rj, done, unique.length)
       try {
-        const r = await upsertWorkFolder(f.rj, f.dir, f.source, (stage) => {
-          workers[id] = { id, rj: f.rj, stage, result: '' }
-          emitWorkers()
-        })
+        const r = await upsertWorkFolder(
+          f.rj,
+          f.dir,
+          f.source,
+          (stage) => {
+            workers[id] = { id, rj: f.rj, stage, result: '' }
+            emitWorkers()
+          },
+          ctx
+        )
         if (r.created) result.added++
         else result.updated++
         countOutcome(result, r.outcome)

@@ -80,7 +80,7 @@ settingsRouter.put('/', (req, res) => {
       const db = getDb()
       const works = (db.prepare('SELECT COUNT(*) AS c FROM works').get() as { c: number }).c
       const recs = (db.prepare('SELECT COUNT(*) AS c FROM work_recommendations').get() as { c: number }).c
-      if (works > 1 && recs === 0) void startRecommendationCalc()
+      if (works > 1 && recs === 0) void startRecommendationCalc(true)
     }
     res.json(next)
   } catch (e) {

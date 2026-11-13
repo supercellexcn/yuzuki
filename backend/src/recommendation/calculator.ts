@@ -38,6 +38,55 @@ export interface RecommendationCalcResult {
   works: number
   rows: number
   errors: string[]
+  /** true = 作品数据与上次计算时完全一致，本次直接跳过（没有重算、没有写库） */
+  skipped?: boolean
+}
+
+/** 输入指纹存放位置（recommendation_meta 表） */
+const SIG_KEY = 'input_signature'
+
+function readMeta(db: ReturnType<typeof getDb>, key: string): string {
+  const row = db.prepare('SELECT value FROM recommendation_meta WHERE key = ?').get(key) as
+    | { value?: string }
+    | undefined
+  return String(row?.value || '')
+}
+
+function writeMeta(db: ReturnType<typeof getDb>, key: string, value: string): void {
+  db.prepare(
+    `INSERT INTO recommendation_meta (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run(key, value)
+}
+
+/**
+ * 计算输入指纹：只看「会影响推荐结果」的数据。
+ *
+ * - 作品数、标题/社团/系列的字符总长、销量总和、updated_at 最大值
+ *   → 覆盖新增 / 删除 / 改名 / 改社团 / 改销量；
+ * - 声优关联数、标签关联数 → 覆盖集合字段的重建（数量变化）；
+ * - 播放次数总和 → 覆盖质量分里的播放因子。
+ *
+ * 命中相同指纹就整次跳过：不再读全表特征、不再做几百万次相似度、也不写三张表。
+ * 扫描跳过一部作品只会改 last_scan_* 字段，不会动 updated_at，所以不触发重算。
+ */
+export function recommendationInputSignature(db: ReturnType<typeof getDb>): { sig: string; works: number } {
+  const w = db
+    .prepare(
+      `SELECT COUNT(*) AS c,
+              COALESCE(SUM(LENGTH(rj_code) + LENGTH(title) + LENGTH(circle) + LENGTH(series)), 0) AS len,
+              COALESCE(SUM(sales_count), 0) AS sales,
+              COALESCE(MAX(updated_at), '') AS u
+       FROM works`
+    )
+    .get() as { c: number; len: number; sales: number; u: string }
+  const t = db.prepare('SELECT COUNT(*) AS c FROM work_tags').get() as { c: number }
+  const a = db.prepare('SELECT COUNT(*) AS c FROM work_actors').get() as { c: number }
+  const p = db.prepare('SELECT COALESCE(SUM(count), 0) AS c FROM play_counts').get() as { c: number }
+  return {
+    works: Number(w.c),
+    sig: [w.c, w.len, w.sales, w.u, t.c, a.c, p.c].join('|'),
+  }
 }
 
 /**
@@ -54,9 +103,19 @@ function yieldToLoop(): Promise<void> {
 }
 
 export async function calculateRecommendations(
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  force = false
 ): Promise<RecommendationCalcResult> {
   const db = getDb()
+  const errors: string[] = []
+
+  // ---- 变更检测：作品数据没变就整次跳过 ----
+  const { sig, works: workCount } = recommendationInputSignature(db)
+  if (!force && readMeta(db, SIG_KEY) === sig) {
+    console.log(`[recommendation] 作品数据未变化，跳过本次计算（${workCount} 部）`)
+    return { works: workCount, rows: 0, errors, skipped: true }
+  }
+
   const s = getSettings()
   const weights: SimilarityWeights = {
     voice: s.recommendation_weight_voice,
@@ -75,7 +134,6 @@ export async function calculateRecommendations(
   const seriesEnabled = s.recommendation_series_priority_enabled
   const seriesMaxCount = s.recommendation_series_max_count
   const seriesBypassMinScore = s.recommendation_series_bypass_min_score
-  const errors: string[] = []
   const now = new Date().toISOString()
 
   // ---- 第一层数据准备：读入全部作品特征 ----
@@ -130,6 +188,7 @@ export async function calculateRecommendations(
          ON CONFLICT(rj_code) DO UPDATE SET calculated_at = excluded.calculated_at, algorithm_version = excluded.algorithm_version, status = excluded.status`
       )
       for (const f of list) upsertState.run(f.rj, now, RECOMMENDATION_VERSION)
+      writeMeta(db, SIG_KEY, sig)
     })
     return { works: n, rows: 0, errors }
   }
@@ -294,6 +353,8 @@ export async function calculateRecommendations(
        ON CONFLICT(tag_id) DO UPDATE SET work_count = excluded.work_count, idf_score = excluded.idf_score, calculated_at = excluded.calculated_at`
     )
     for (const [tid, df] of tagDf) upsertTag.run(tid, df, tagIdf.get(tid) ?? 0, now)
+    // 记录本次计算对应的输入指纹：下次数据没变就直接跳过
+    writeMeta(db, SIG_KEY, sig)
   })
 
   console.log(`[recommendation] 已计算 ${n} 个作品的推荐关系（${rows} 行，${RECOMMENDATION_VERSION}）`)

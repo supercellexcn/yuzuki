@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { getDb, transaction } from '../db/connection.js'
 import { getCoverDir } from '../settings.js'
@@ -54,6 +55,8 @@ interface WorkRow {
   actors_confirmed?: number
   /** 1 = 类型标签已被权威数据源确认（此时「无原生标签」代表该作品真的没有分类） */
   tags_confirmed?: number
+  /** 目录树签名（各子目录 mtimeMs 的哈希），没变就跳过文件遍历 */
+  folder_sig?: string
   /** 上次扫描的处置结果：'' / 跳过 / 已处理 / 禁售 / 下架 / 失败 */
   last_scan_result?: string
   last_scan_at?: string
@@ -72,22 +75,88 @@ interface FileRow {
 }
 
 /**
+ * 扫描上下文：把「每部作品都要查一遍」的 DB 查询与文件 stat 一次性预读到内存。
+ *
+ * 之前每部作品要查 2 次 works、2 次 COUNT（标签/声优）、1 次封面文件存在性，
+ * 7685 部就是三万多条 SQL + 上万次网络盘 stat，且全是同步调用 —— 这是「跳过也要跑一两分钟」的主因之一。
+ */
+export interface ScanContext {
+  /** rj → works 行 */
+  works: Map<string, WorkRow>
+  /** work_id → 原生标签数（不含自定义标签） */
+  tagCount: Map<number, number>
+  /** work_id → 声优数 */
+  actorCount: Map<number, number>
+  /** 封面目录里的文件名集合 */
+  coverFiles: Set<string>
+}
+
+export function buildScanContext(db: DatabaseSync): ScanContext {
+  const works = new Map<string, WorkRow>()
+  for (const row of db.prepare('SELECT * FROM works').all() as unknown as WorkRow[]) {
+    works.set(row.rj_code, row)
+  }
+  const tagCount = new Map<number, number>()
+  const tagRows = db
+    .prepare(
+      `SELECT wt.work_id AS id, COUNT(*) AS c FROM work_tags wt JOIN tags t ON t.id = wt.tag_id
+       WHERE t.category != ? GROUP BY wt.work_id`
+    )
+    .all(CUSTOM_TAG) as Array<{ id: number; c: number }>
+  for (const r of tagRows) tagCount.set(Number(r.id), Number(r.c))
+  const actorCount = new Map<number, number>()
+  const actorRows = db
+    .prepare('SELECT work_id AS id, COUNT(*) AS c FROM work_actors GROUP BY work_id')
+    .all() as Array<{ id: number; c: number }>
+  for (const r of actorRows) actorCount.set(Number(r.id), Number(r.c))
+  const coverFiles = new Set<string>()
+  try {
+    for (const f of fs.readdirSync(getCoverDir())) coverFiles.add(f)
+  } catch {
+    /* 封面目录不存在时视为空 */
+  }
+  return { works, tagCount, actorCount, coverFiles }
+}
+
+/** 抓取 / 新建后刷新上下文里这一部作品的字段与计数，供后续判定复用。 */
+function refreshContext(ctx: ScanContext, db: DatabaseSync, rj: string): void {
+  const row = db.prepare('SELECT * FROM works WHERE rj_code = ?').get(rj) as unknown as WorkRow | undefined
+  if (!row) return
+  ctx.works.set(rj, row)
+  const tc = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM work_tags wt JOIN tags t ON t.id = wt.tag_id
+       WHERE wt.work_id = ? AND t.category != ?`
+    )
+    .get(row.id, CUSTOM_TAG) as { c: number }
+  ctx.tagCount.set(row.id, Number(tc.c))
+  const ac = db.prepare('SELECT COUNT(*) AS c FROM work_actors WHERE work_id = ?').get(row.id) as { c: number }
+  ctx.actorCount.set(row.id, Number(ac.c))
+  const base = path.basename(String(row.cover_path || ''))
+  if (base) ctx.coverFiles.add(base)
+}
+
+/**
  * 将本地一个 RJ 文件夹同步进数据库：
  * - 若作品不存在，则从 DLsite 抓取元数据并入库；
  * - 若已存在且信息不完整（或上次禁售），补抓一次；
  * - 信息完整且未要求刷新时**一个请求都不发**，直接跳过；
- * - 始终重扫该文件夹下的文件列表。
+ * - 文件夹结构没变（目录签名一致）时连文件遍历都跳过。
  *
+ * 传入 ctx 时，判定所需的 works / 计数 / 封面文件集合都从内存取，不再逐部查库。
  * 返回值里的 outcome 是本轮对这部作品的处置结果，同时写入 works.last_scan_result。
  */
 export async function upsertWorkFolder(
   rj: string,
   folder: string,
   source: string,
-  onStage?: (stage: string) => void
+  onStage?: (stage: string) => void,
+  ctx?: ScanContext
 ): Promise<UpsertResult> {
   const db = getDb()
-  const existing = db.prepare('SELECT * FROM works WHERE rj_code = ?').get(rj) as unknown as WorkRow | undefined
+  const existing = ctx
+    ? ctx.works.get(rj)
+    : (db.prepare('SELECT * FROM works WHERE rj_code = ?').get(rj) as unknown as WorkRow | undefined)
 
   let created = false
   let outcome: ScanOutcome
@@ -95,21 +164,33 @@ export async function upsertWorkFolder(
     created = true
     onStage?.('抓取元数据')
     await createWork(db, rj, folder, source, onStage)
+    if (ctx) refreshContext(ctx, db, rj)
     outcome = fetchedOutcome(db, rj)
-  } else if (needsMetadataRefresh(db, existing)) {
+  } else if (needsMetadataRefresh(db, existing, ctx)) {
     // 信息缺失（无标题 / 无声优 / 无封面文件）→ 补抓，最多重试 2 次
     onStage?.('补抓元数据')
     await retryRefreshMetadata(db, existing.id, rj)
+    if (ctx) refreshContext(ctx, db, rj)
     outcome = fetchedOutcome(db, rj)
   } else {
     // 数据完整、未勾选刷新动态数据：不请求任何网站接口，直接跳过
     outcome = '跳过'
   }
 
-  const work = db.prepare('SELECT * FROM works WHERE rj_code = ?').get(rj) as unknown as WorkRow
-  onStage?.('扫描文件')
-  scanWorkFiles(db, work.id, folder)
+  const work = ctx
+    ? (ctx.works.get(rj) as WorkRow)
+    : (db.prepare('SELECT * FROM works WHERE rj_code = ?').get(rj) as unknown as WorkRow)
+
+  // 目录签名一致 → 文件夹结构没动过，连 readdir / stat 都省掉。
+  // 签名第一次为空（老数据）时必定走一次全量扫描，此后才生效。
+  const sig = folderSignature(folder)
+  if (!sig || sig !== String(work.folder_sig || '')) {
+    onStage?.('扫描文件')
+    scanWorkFiles(db, work.id, folder)
+    db.prepare('UPDATE works SET folder_sig = ? WHERE id = ?').run(sig, work.id)
+  }
   markScanResult(db, work.id, outcome)
+  if (ctx) ctx.works.set(rj, { ...work, last_scan_result: outcome })
   return { created, outcome }
 }
 
@@ -195,15 +276,28 @@ function nativeTagCount(db: DatabaseSync, workId: number): number {
  * 系列、评分、评论数、销量、其它语言版本都不算必需项：
  * 前两者可能真的没有，后两者是 0 也合理（NULL 才代表没抓到）。
  */
-export function missingFieldsOf(db: DatabaseSync, row: MissingCheckRow): MissingField[] {
+export function missingFieldsOf(
+  db: DatabaseSync,
+  row: MissingCheckRow,
+  ctx?: ScanContext
+): MissingField[] {
+  const id = Number(row.id)
+  const coverPath = String(row.cover_path || '')
+  // 传了 ctx 时全部走内存（扫描路径），否则按需查库（后台接口等单部调用）
+  const tags = ctx ? ctx.tagCount.get(id) || 0 : nativeTagCount(db, id)
+  const actors = ctx ? ctx.actorCount.get(id) || 0 : actorCount(db, id)
+  const hasCover = ctx
+    ? Boolean(coverPath) && ctx.coverFiles.has(path.basename(coverPath))
+    : coverFileExists(coverPath)
+
   const out: MissingField[] = []
   if (!String(row.title || '').trim()) out.push('title')
   if (!String(row.circle || '').trim()) out.push('circle')
-  if (Number(row.actors_confirmed) !== 1 && !actorCount(db, Number(row.id))) out.push('actors')
-  if (!coverFileExists(String(row.cover_path || ''))) out.push('cover')
+  if (Number(row.actors_confirmed) !== 1 && !actors) out.push('actors')
+  if (!hasCover) out.push('cover')
   if (!String(row.release_date || '').trim()) out.push('release_date')
   if (row.price == null) out.push('price')
-  if (Number(row.tags_confirmed) !== 1 && !nativeTagCount(db, Number(row.id))) out.push('tags')
+  if (Number(row.tags_confirmed) !== 1 && !tags) out.push('tags')
   return out
 }
 
@@ -224,10 +318,10 @@ function actorCount(db: DatabaseSync, workId: number): number {
  *   再抓也不会有新东西，跳过，避免每次扫描都白发请求。
  * - '' / ok / error：按必需项是否缺失判定（老库数据也走这条）。
  */
-function needsMetadataRefresh(db: DatabaseSync, existing: WorkRow): boolean {
+function needsMetadataRefresh(db: DatabaseSync, existing: WorkRow, ctx?: ScanContext): boolean {
   const status = String(existing.fetch_status || '')
   if (status === 'region_blocked') return true
-  const missing = missingFieldsOf(db, existing)
+  const missing = missingFieldsOf(db, existing, ctx)
   if (missing.length === 0) return false
   if (status === 'not_found' && String(existing.title || '').trim()) {
     // DLsite 上确实没有这部作品，标题 / 声优 / 标签再抓也补不到。
@@ -682,6 +776,14 @@ export function restoreWorkCover(db: DatabaseSync, rj: string, workId: number): 
 
 function scanWorkFiles(db: DatabaseSync, workId: number, folder: string): void {
   const files = collectTree(folder)
+  const old = db
+    .prepare('SELECT rel_path, is_dir, size FROM files WHERE work_id = ? ORDER BY sort_order')
+    .all(workId) as Array<{ rel_path: string; is_dir: number; size: number }>
+
+  // 增量判定：结构完全一致就一个字节都不写。媒体库 7685 部、30 万个文件条目，
+  // 之前每轮都是「全删 + 全插」，光这一项就要写 60 万行；现在未变动作品零写入。
+  if (sameTree(old, files)) return
+
   const del = db.prepare('DELETE FROM files WHERE work_id = ?')
   const ins = db.prepare(
     'INSERT INTO files (work_id, filename, rel_path, ext, kind, is_dir, size, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -692,6 +794,62 @@ function scanWorkFiles(db: DatabaseSync, workId: number, folder: string): void {
   })
   const fileCount = files.filter((f) => !f.is_dir).length
   db.prepare('UPDATE works SET file_count = ?, updated_at = ? WHERE id = ?').run(fileCount, new Date().toISOString(), workId)
+}
+
+/** 新旧文件树是否完全一致（顺序、路径、目录标记、文件大小）。 */
+export function sameTree(
+  old: Array<{ rel_path: string; is_dir: number; size: number }>,
+  next: FileRow[]
+): boolean {
+  if (old.length !== next.length) return false
+  for (let i = 0; i < old.length; i++) {
+    const a = old[i]
+    const b = next[i]
+    if (a.rel_path !== b.rel_path) return false
+    if (Number(a.is_dir) !== b.is_dir) return false
+    if (!b.is_dir && Number(a.size) !== b.size) return false
+  }
+  return true
+}
+
+/**
+ * 目录树签名：递归收集每个目录（含根）的 mtimeMs 做哈希。
+ *
+ * 只看**目录**的 mtime，不看文件内容 —— 目录 mtime 在「增删改名子项」时才会变，
+ * 正好对应「文件列表可能需要更新」的场景。目录数量通常只有几个到几十个，
+ * 比逐个文件 stat 便宜一个数量级。代价是「同名文件被覆盖」不会触发（只影响 size 显示）。
+ */
+export function folderSignature(root: string): string {
+  const parts: string[] = []
+  let rootMtime = 0
+  try {
+    rootMtime = fs.statSync(root).mtimeMs
+  } catch {
+    return '' // 目录读不到：交给调用方按「有变化」处理
+  }
+  parts.push(`.:${rootMtime}`)
+  const walk = (dir: string, rel: string, depth: number) => {
+    if (depth > 12) return
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue
+      const full = path.join(dir, e.name)
+      const relPath = `${rel}/${e.name}`
+      try {
+        parts.push(`${relPath}:${fs.statSync(full).mtimeMs}`)
+      } catch {
+        parts.push(`${relPath}:0`)
+      }
+      walk(full, relPath, depth + 1)
+    }
+  }
+  walk(root, '', 0)
+  return crypto.createHash('sha1').update(parts.sort().join('|')).digest('hex').slice(0, 16)
 }
 
 function compareName(a: fs.Dirent, b: fs.Dirent): number {
