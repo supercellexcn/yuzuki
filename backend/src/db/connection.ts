@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS works (
    * 0 = 未确认：老数据或没抓到声优，下次扫描需要补抓。
    */
   actors_confirmed INTEGER NOT NULL DEFAULT 0,
+  /**
+   * 类型标签是否已被权威数据源确认过（api2 返回过 genres / genres_replaced 字段，
+   * 或作品页信息区解析成功）。1 = 已确认：此时「没有原生标签」表示该作品确实没有分类
+   * （只有「作品形式」没有「分類」的作品，如全年龄 ASMR 企划），不算缺失。
+   */
+  tags_confirmed INTEGER NOT NULL DEFAULT 0,
   /** 上次扫描的处置结果：'' | 跳过 | 已处理 | 禁售 | 下架 | 失败 —— 便于判断该去哪找信息 */
   last_scan_result TEXT NOT NULL DEFAULT '',
   /** 上次扫描处置的时间（ISO 字符串，空表示还没被扫描处理过） */
@@ -239,6 +245,11 @@ function migrate(d: DatabaseSync): void {
   // 抓完（api2 的 creaters 或作品页信息区）置 1，从此「空」即代表该作品真的没有声优。
   if (!w.some((c) => c.name === 'actors_confirmed')) {
     d.exec('ALTER TABLE works ADD COLUMN actors_confirmed INTEGER NOT NULL DEFAULT 0')
+  }
+  // 标签是否已被权威数据源确认：有些作品（全年龄 ASMR 企划、素材集）在 DLsite 上
+  // 只有「作品形式」没有「分類」，确认过之后就不再每轮重抓。
+  if (!w.some((c) => c.name === 'tags_confirmed')) {
+    d.exec('ALTER TABLE works ADD COLUMN tags_confirmed INTEGER NOT NULL DEFAULT 0')
   }
   // 上次扫描处置结果 / 时间：老数据留空，下一轮扫描会全部写一遍
   if (!w.some((c) => c.name === 'last_scan_result')) {

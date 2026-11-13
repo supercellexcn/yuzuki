@@ -210,6 +210,9 @@ export function applyApi2(meta: Partial<DlsiteMeta>, api2: Api2Data, base: strin
       .map((g) => ({ name: (g.name || '').trim(), category: 'ジャンル' }))
       .filter((t) => t.name)
   }
+  // 两个字段任一存在即说明接口明确回答过「有哪些分类」：此时为空 = 该作品确实没有分类
+  // （作品页只有「作品形式」没有「分類」的作品，如全年龄 ASMR 企划）。
+  if (api2.genres !== undefined || api2.genres_replaced !== undefined) meta.tags_confirmed = true
   if (!meta.age_rating) meta.age_rating = api2AgeRating(api2.age_category_string)
   const trans = api2Translations(api2.language_editions, meta.rj_code || '')
   if (!meta.translations?.length && trans.length) meta.translations = trans
@@ -322,9 +325,12 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
     if (pageHtml) {
       mergeParsed(meta, parseWorkPage(pageHtml, rj_code), base)
 
-      // 作品页信息区解析成功 → 声优字段已有权威答案（页面里没有「声优」行 = 真的没有）。
+      // 作品页信息区解析成功 → 声优 / 分类字段已有权威答案（页面里没有「分類」行 = 真的没有）。
       // 禁售页没有信息区，不会走到这里，所以不会把「没抓到」误标成「确认没有」。
-      if (hasInfoSection(pageHtml)) meta.actors_confirmed = true
+      if (hasInfoSection(pageHtml)) {
+        meta.actors_confirmed = true
+        meta.tags_confirmed = true
+      }
 
       // 地区禁售：当前线路所在区域不卖。api2 已经拿到数据说明线路可用，不采信禁售判定。
       if (!api2Ok && isRegionBlockedPage(pageHtml)) {

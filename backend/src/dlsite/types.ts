@@ -51,4 +51,9 @@ export interface DlsiteMeta {
    * 解析成功）。为 true 时 actors 为空表示「该作品确实没有声优」，不算信息缺失。
    */
   actors_confirmed?: boolean
+  /**
+   * 类型标签是否由权威数据源确认过（api2 明确返回了 genres / genres_replaced 字段，
+   * 或作品页信息区解析成功）。为 true 时没有原生标签表示「该作品确实没有分类」。
+   */
+  tags_confirmed?: boolean
 }

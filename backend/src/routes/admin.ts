@@ -20,7 +20,8 @@ const MISSING_COND: Record<string, string> = {
   cover: "w.cover_path = ''",
   release_date: "TRIM(w.release_date) = ''",
   price: 'w.price IS NULL',
-  tags: `NOT EXISTS (SELECT 1 FROM work_tags wt JOIN tags t ON t.id = wt.tag_id
+  // 同理：DLsite 确认过没有「分類」的作品（只有作品形式）不算缺标签
+  tags: `IFNULL(w.tags_confirmed, 0) = 0 AND NOT EXISTS (SELECT 1 FROM work_tags wt JOIN tags t ON t.id = wt.tag_id
          WHERE wt.work_id = w.id AND t.category != '${CUSTOM_TAG}')`,
 }
 

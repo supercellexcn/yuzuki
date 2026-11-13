@@ -52,6 +52,8 @@ interface WorkRow {
   cover_source: string
   /** 1 = 声优字段已被权威数据源确认（此时「无声优」代表该作品真的没有） */
   actors_confirmed?: number
+  /** 1 = 类型标签已被权威数据源确认（此时「无原生标签」代表该作品真的没有分类） */
+  tags_confirmed?: number
   /** 上次扫描的处置结果：'' / 跳过 / 已处理 / 禁售 / 下架 / 失败 */
   last_scan_result?: string
   last_scan_at?: string
@@ -157,6 +159,7 @@ interface MissingCheckRow {
   price?: unknown
   cover_path?: unknown
   actors_confirmed?: unknown
+  tags_confirmed?: unknown
 }
 
 function coverFileExists(coverPath: string): boolean {
@@ -186,6 +189,9 @@ function nativeTagCount(db: DatabaseSync, workId: number): number {
  * 靠 actors_confirmed 区分 —— 只有「没抓到声优且从未被权威数据源确认过」才算缺，
  * 抓过一次（api2 的 creaters / 作品页信息区）后为空即视为该作品真的没有。
  *
+ * 类型标签同理：有些作品在 DLsite 上只有「作品形式」没有「分類」（全年龄 ASMR 企划、
+ * 素材集），api2 明确返回过 genres 字段却为空，靠 tags_confirmed 记住这个结论。
+ *
  * 系列、评分、评论数、销量、其它语言版本都不算必需项：
  * 前两者可能真的没有，后两者是 0 也合理（NULL 才代表没抓到）。
  */
@@ -197,7 +203,7 @@ export function missingFieldsOf(db: DatabaseSync, row: MissingCheckRow): Missing
   if (!coverFileExists(String(row.cover_path || ''))) out.push('cover')
   if (!String(row.release_date || '').trim()) out.push('release_date')
   if (row.price == null) out.push('price')
-  if (!nativeTagCount(db, Number(row.id))) out.push('tags')
+  if (Number(row.tags_confirmed) !== 1 && !nativeTagCount(db, Number(row.id))) out.push('tags')
   return out
 }
 
@@ -346,8 +352,8 @@ async function createWork(
   const info = db
     .prepare(
       `INSERT INTO works (rj_code, title, circle, release_date, series, sales_count, price, rating, rating_count,
-         cover_path, cover_source, folder_path, source_path, actors_confirmed, fetch_status, added_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         cover_path, cover_source, folder_path, source_path, actors_confirmed, tags_confirmed, fetch_status, added_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       rj,
@@ -364,6 +370,7 @@ async function createWork(
       folder,
       source,
       meta.actors_confirmed ? 1 : 0,
+      meta.tags_confirmed ? 1 : 0,
       meta.fetch_status || '',
       now,
       now
@@ -430,6 +437,7 @@ function applyMeta(db: DatabaseSync, workId: number, meta: Partial<DlsiteMeta>, 
        sales_count = COALESCE(?, sales_count), price = COALESCE(?, price),
        rating = COALESCE(?, rating), rating_count = COALESCE(?, rating_count),
        actors_confirmed = CASE WHEN ? = 1 THEN 1 ELSE actors_confirmed END,
+       tags_confirmed = CASE WHEN ? = 1 THEN 1 ELSE tags_confirmed END,
        fetch_status = ?, updated_at = ?
      WHERE id = ?`
   ).run(
@@ -443,8 +451,9 @@ function applyMeta(db: DatabaseSync, workId: number, meta: Partial<DlsiteMeta>, 
     meta.price ?? null,
     meta.rating ?? null,
     meta.rating_count ?? null,
-    // 只有本次确实由权威数据源确认过声优字段时才置 1，从不主动清 0
+    // 只有本次确实由权威数据源确认过时才置 1，从不主动清 0
     meta.actors_confirmed ? 1 : 0,
+    meta.tags_confirmed ? 1 : 0,
     meta.fetch_status || '',
     new Date().toISOString(),
     workId
