@@ -6,11 +6,13 @@ import type { Api1Data, Api2Data } from './fallback.js'
 import { fetchHvdbMeta } from './hvdb.js'
 import type { DlsiteMeta } from './types.js'
 
-interface DlsiteAjaxItem {
+export interface DlsiteAjaxItem {
   dl_count?: string | number
   rate_average_2dp?: number | string
   rate_count?: number | string
+  review_count?: number | string
   price?: number | string
+  official_price?: number | string
 }
 
 /** 数字字段解析：空串 / undefined / NaN 一律视为「没抓到」（null），0 保留为有效值。 */
@@ -18,6 +20,23 @@ export function toNumber(v: unknown): number | null {
   if (v == null || v === '') return null
   const n = Number(String(v).replace(/,/g, ''))
   return Number.isFinite(n) ? n : null
+}
+
+/**
+ * 合并动态数据（价格 / 评分 / 评论数 / 销量）。
+ *
+ * 这几项只存在于 DLsite 的 JSON 接口（作品页 HTML 里没有结构化标记，且价格随 locale
+ * 变成 RMB / USD），所以 touch 与 api1 两个接口都当数据源；已有值不被覆盖，
+ * 缺的才补 —— 任一接口失败时另一个还能兜住。
+ */
+export function applyDynamic(meta: Partial<DlsiteMeta>, item: DlsiteAjaxItem | null | undefined): void {
+  if (!item) return
+  // 价格取原价（official_price），没有才用当前售价；两者都是日元整数
+  if (meta.price == null) meta.price = toNumber(item.official_price) ?? toNumber(item.price)
+  if (meta.rating == null) meta.rating = toNumber(item.rate_average_2dp)
+  // rate_count = 评分人数；review_count = 文字评论数，作为兜底
+  if (meta.rating_count == null) meta.rating_count = toNumber(item.rate_count) ?? toNumber(item.review_count)
+  if (meta.sales_count == null) meta.sales_count = toNumber(item.dl_count)
 }
 
 function absolutize(url: string, base: string): string {
@@ -85,7 +104,12 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
     if (meta.cover_url.includes('no_img_main.gif')) meta.cover_url = ''
   }
 
-  // 2) 只对缺失字段做惰性兜底，避免对在售作品产生额外请求
+  // 2) 动态数据：touch JSON 与作品页并行发出，HTML 解析完就取回来。
+  //    作品页被地区限制拦截时这一步仍可能拿到，属于「能拿一点是一点」。
+  const dynamic = await jsonPromise
+  applyDynamic(meta, dynamic?.[rj_code])
+
+  // 3) 只对缺失字段做惰性兜底，避免对在售作品产生额外请求
   const need = (v: unknown): boolean => !v || (Array.isArray(v) && v.length === 0)
   const needTitle = need(meta.title)
   const needCircle = need(meta.circle)
@@ -93,6 +117,8 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
   const needActors = need(meta.actors)
   const needTags = need(meta.tags)
   const needRelease = need(meta.release_date)
+  // 动态数据缺失（接口被拦 / 返回不完整）也算「需要兜底」
+  const needDynamic = meta.price == null || meta.rating == null || meta.rating_count == null
 
   let api2: Api2Data | null = null
   let api1: Api1Data | null = null
@@ -114,24 +140,32 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
           .map((g) => ({ name: g.name.trim(), category: 'ジャンル' }))
           .filter((t) => t.name)
       }
-      // 年龄分级兜底：页面「年齢指定」拿不到时用 api2 的 age_category（all / r18）
-      if (!meta.age_rating && api2.age_category) {
-        meta.age_rating = String(api2.age_category).toLowerCase().includes('r18') ? 'R18' : '全年齢'
+      // 年龄分级兜底：只在 api2 返回可读字符串（all / r18）时才用。
+      // 线上实际返回的是数字编码（如 3 = R18），含义未文档化 —— 宁可留空不打标，
+      // 也不能把 R18 作品误标成「全年龄」。
+      const ageRaw = String(api2.age_category ?? '')
+        .trim()
+        .toLowerCase()
+      if (!meta.age_rating && ageRaw) {
+        if (ageRaw.includes('r18') || ageRaw.includes('adult')) meta.age_rating = 'R18'
+        else if (ageRaw === 'all' || ageRaw.includes('全年齢') || ageRaw.includes('all_age')) meta.age_rating = '全年齢'
       }
     }
   }
 
-  // 3) 仍缺 cover/circle 时才请求 api1（下架作品的核心兜底源；顺带补 title/release/sales）
-  if (!meta.cover_url || !meta.circle) {
+  // 4) api1：缺 cover/circle 时是下架作品的核心兜底源；动态数据没拿全时也用它再要一次
+  //    （api1 与 touch 返回同一套字段，任一接口被拦时另一个还能补上价格 / 评分 / 评论数）
+  if (!meta.cover_url || !meta.circle || needDynamic) {
     api1 = await fetchApi1(rj_code)
     if (api1) {
       if (!meta.title && api1.work_name) meta.title = api1.work_name.trim()
       if (!meta.cover_url && api1.work_image) meta.cover_url = absolutizeCover(api1.work_image)
       if (!meta.release_date && api1.regist_date) meta.release_date = normalizeReleaseDate(api1.regist_date)
+      applyDynamic(meta, api1)
     }
   }
 
-  // 4) 社团名兜底：api2.maker_name 拿不到时，用 maker_id 查 ci-en / 社团 profile 页
+  // 5) 社团名兜底：api2.maker_name 拿不到时，用 maker_id 查 ci-en / 社团 profile 页
   if (!meta.circle) {
     const makerId = api2?.maker_id ?? api1?.maker_id
     if (makerId != null && makerId !== '') {
@@ -140,7 +174,7 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
     }
   }
 
-  // 5) HVDB 兜底：DLsite 各来源仍拿不到核心字段（标题/社团/声优/标签）时，从 HVDB 抓取（参考 kikoeru）
+  // 6) HVDB 兜底：DLsite 各来源仍拿不到核心字段（标题/社团/声优/标签）时，从 HVDB 抓取（参考 kikoeru）
   if (!meta.title || !meta.circle || !meta.actors?.length || !meta.tags?.length) {
     const hvdb = await fetchHvdbMeta(rj_code)
     if (hvdb) {
@@ -153,24 +187,10 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
     }
   }
 
-  // 6) 动态数据（销量 / 价格 / 评分 / 评论数）：触摸版 JSON 一次拿全，api1 兜价格。
-  //    这四项是随时间变化的，重抓时以最新值为准；null 表示本次没抓到，调用方不会覆盖旧值。
-  const data = await jsonPromise
-  const item = data?.[rj_code]
-  if (item) {
-    const sales = toNumber(item.dl_count)
-    if (sales != null) meta.sales_count = sales
-    const price = toNumber(item.price)
-    if (price != null) meta.price = price
-    const rating = toNumber(item.rate_average_2dp)
-    if (rating != null) meta.rating = rating
-    const ratingCount = toNumber(item.rate_count)
-    if (ratingCount != null) meta.rating_count = ratingCount
+  // 两个 JSON 接口都没给价格 / 评分：多半是这次请求被限制了（地区 / 风控），留日志便于排查
+  if (meta.price == null && meta.rating == null) {
+    console.warn(`[dlsite] ${rj_code} 价格与评分均未取到（动态接口可能被限制）`)
   }
-  if (meta.sales_count == null && api1?.dl_count != null) {
-    meta.sales_count = toNumber(api1.dl_count)
-  }
-  if (meta.price == null) meta.price = toNumber(api1?.price)
 
   // 7) 全部来源（DLsite 各接口 + HVDB）都无有效信息才算失败（调用方据此保留旧数据 / 记 error）
   const hasAny =

@@ -45,6 +45,12 @@ export interface Api1Data {
   dl_count?: string | number
   /** 价格（日元）；下架作品也能返回 */
   price?: string | number
+  /** 原价（日元），与 price 的区别在于不受折扣影响 */
+  official_price?: string | number
+  /** 平均评分（两位小数）与评分人数 / 文字评论数 */
+  rate_average_2dp?: number | string
+  rate_count?: number | string
+  review_count?: number | string
   is_sale?: boolean
 }
 

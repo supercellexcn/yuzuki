@@ -3,8 +3,13 @@ import type { DlsiteMeta, DlsiteTranslation } from './types.js'
 
 /**
  * 解析 DLsite 作品页 HTML（静态部分）。
- * 结构依据页面中的 #work_outline 表格：每个字段是一行 <tr>，<th> 是字段名，
- * 值在 <td> 里。字段名随 locale 变化，这里同时列出日/简中/繁中以便兼容。
+ *
+ * DLsite 有两套信息区布局，都要支持：
+ * - 新布局（当前线上，服务端渲染的 Vue 组件）：
+ *   `<dt class="c-productInfo__key">字段名</dt><dd class="c-productInfo__value">值</dd>`
+ * - 旧布局：`#work_outline` 表格，`<th>字段名</th><td>值</td>`
+ *
+ * 字段名随 locale 变化，这里同时列出日 / 简中 / 繁中以便兼容。
  */
 const LABELS = {
   genre: ['ジャンル', '分类', '分類', '類型', '类型'],
@@ -12,6 +17,7 @@ const LABELS = {
   release: ['販売日', '贩卖日', '販賣日', '発売日', '发售日'],
   series: ['シリーズ名', '系列名'],
   age: ['年齢指定', '年龄指定', '年齡指定', '年齢区分', '年龄分级'],
+  circle: ['サークル名', '社团名', '社團名', 'ブランド名'],
 }
 
 /** 翻译版语言识别：DLsite 上的语言名（日 / 简中 / 繁中 / 英 / 韩 / 西）。 */
@@ -147,6 +153,36 @@ function findRow($: cheerio.CheerioAPI, outline: cheerio.Cheerio<any>, labels: s
     .first()
 }
 
+/**
+ * 取信息字段的值节点，新旧两套布局都试，取到哪个用哪个。
+ * 找不到返回 null（调用方按「该字段没拿到」处理，不要瞎猜）。
+ */
+function findField($: cheerio.CheerioAPI, labels: string[]): cheerio.Cheerio<any> | null {
+  // 新布局：dt(字段名) 的紧邻 dd(值)
+  const dt = $('dt.c-productInfo__key')
+    .filter((_, el) => labels.includes($(el).text().trim()))
+    .first()
+  if (dt.length) {
+    const dd = dt.next('dd')
+    if (dd.length) return dd
+  }
+  // 旧布局：#work_outline 表格
+  const outline = $('#work_outline')
+  if (outline.length) {
+    const td = findRow($, outline, labels)
+    if (td.length) return td
+  }
+  return null
+}
+
+/** 发售日统一成 YYYY-MM-DD：新布局是「2024年10月8日」，旧布局是纯数字串。 */
+function normalizeRelease(text: string): string {
+  const m = text.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/)
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
+  const digits = text.replace(/\D/g, '')
+  return digits.length >= 8 ? `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}` : text.trim()
+}
+
 export function parseWorkPage(html: string, rj_code: string): Partial<DlsiteMeta> {
   const $ = cheerio.load(html)
   const meta: Partial<DlsiteMeta> = { rj_code, actors: [], tags: [] }
@@ -156,8 +192,11 @@ export function parseWorkPage(html: string, rj_code: string): Partial<DlsiteMeta
   title = title.replace(/ \[.+\] \| DLsite$/, '').trim()
   meta.title = title || $('h1').first().text().trim() || ''
 
-  // 社团
-  meta.circle = $('span.maker_name').children('a').first().text().trim()
+  // 社团：旧布局 span.maker_name > a；新布局「社团名」字段
+  const circleField = findField($, LABELS.circle)
+  meta.circle =
+    $('span.maker_name').children('a').first().text().trim() ||
+    (circleField ? circleField.find('a').first().text().trim() || circleField.text().trim() : '')
 
   // 封面：og:image 优先
   meta.cover_url =
@@ -166,33 +205,25 @@ export function parseWorkPage(html: string, rj_code: string): Partial<DlsiteMeta
     $('#main_image img').first().attr('src') ||
     ''
 
-  const outline = $('#work_outline')
-
   // 贩卖日 → YYYY-MM-DD
-  const releaseTd = findRow($, outline, LABELS.release)
-  const releaseRaw = releaseTd.text().replace(/[^0-9]/g, '')
-  meta.release_date =
-    releaseRaw.length >= 8
-      ? `${releaseRaw.slice(0, 4)}-${releaseRaw.slice(4, 6)}-${releaseRaw.slice(6, 8)}`
-      : releaseTd.text().trim()
+  const releaseField = findField($, LABELS.release)
+  meta.release_date = releaseField ? normalizeRelease(releaseField.text().replace(/\s+/g, ' ').trim()) : ''
 
   // 系列
-  const seriesTd = findRow($, outline, LABELS.series)
-  meta.series = seriesTd.children('a').first().text().trim()
+  const seriesField = findField($, LABELS.series)
+  meta.series = seriesField ? seriesField.find('a').first().text().trim() || seriesField.text().trim() : ''
 
   // 年龄指定（全年齢 / R18 …）：决定是否打「全年龄」标签，拿不到就留空
-  const ageTd = findRow($, outline, LABELS.age)
-  meta.age_rating = ageTd.text().trim()
+  const ageField = findField($, LABELS.age)
+  meta.age_rating = ageField ? ageField.text().replace(/\s+/g, ' ').trim() : ''
 
   // 其它语言版本
   meta.translations = collectTranslations($, rj_code)
 
-  // 类型标签：td > div > a（兜底 td > a）
-  const genreTd = findRow($, outline, LABELS.genre)
-  const genreLinks = genreTd.children('div').children('a')
-  const links = genreLinks.length ? genreLinks : genreTd.children('a')
+  // 类型标签：值节点里的链接（新旧布局的链接都在这层，不再区分 td > div > a）
+  const genreField = findField($, LABELS.genre)
   const seenTags = new Set<string>()
-  links.each((_, el) => {
+  genreField?.find('a').each((_, el) => {
     const name = $(el).text().trim()
     if (name && !seenTags.has(name)) {
       seenTags.add(name)
@@ -200,12 +231,21 @@ export function parseWorkPage(html: string, rj_code: string): Partial<DlsiteMeta
     }
   })
 
-  // 声优：td > a
-  const vaTd = findRow($, outline, LABELS.va)
-  vaTd.children('a').each((_, el) => {
-    const name = $(el).text().trim()
-    if (name) meta.actors!.push(name)
-  })
+  // 声优：优先链接，没有链接时按分隔符切分纯文本
+  const vaField = findField($, LABELS.va)
+  if (vaField) {
+    const links = vaField.find('a')
+    if (links.length) {
+      links.each((_, el) => {
+        const name = $(el).text().trim()
+        if (name) meta.actors!.push(name)
+      })
+    } else {
+      for (const name of vaField.text().split(/[\s\u3000、,，/]+/)) {
+        if (name.trim()) meta.actors!.push(name.trim())
+      }
+    }
+  }
 
   return meta
 }
