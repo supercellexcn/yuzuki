@@ -21,6 +21,14 @@ CREATE TABLE IF NOT EXISTS works (
   folder_path TEXT NOT NULL DEFAULT '',
   source_path TEXT NOT NULL DEFAULT '',
   file_count INTEGER NOT NULL DEFAULT 0,
+  /**
+   * 上次抓取时 DLsite 侧的返回状态，决定「这个作品该去哪找信息」：
+   * ''（未抓过 / 旧数据）| ok（正常返回作品页）| region_blocked（所在区域不卖，
+   * 换线路可补）| not_found（作品不存在或已下架）| error（网络等异常）
+   */
+  fetch_status TEXT NOT NULL DEFAULT '',
+  /** 当前封面文件来自哪里：'' | dlsite | hvdb —— 用于让 DLsite 封面覆盖早前兜底写入的封面 */
+  cover_source TEXT NOT NULL DEFAULT '',
   added_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -209,6 +217,13 @@ function migrate(d: DatabaseSync): void {
   }
   if (!w.some((c) => c.name === 'rating_count')) {
     d.exec('ALTER TABLE works ADD COLUMN rating_count INTEGER')
+  }
+  // DL 状态与封面来源：老库升级后 fetch_status 为空（未知），下次扫描按缺失项正常判定
+  if (!w.some((c) => c.name === 'fetch_status')) {
+    d.exec("ALTER TABLE works ADD COLUMN fetch_status TEXT NOT NULL DEFAULT ''")
+  }
+  if (!w.some((c) => c.name === 'cover_source')) {
+    d.exec("ALTER TABLE works ADD COLUMN cover_source TEXT NOT NULL DEFAULT ''")
   }
 
   // play_history.rj_code：以 RJ 号作为稳定关联键，作品被删后重新入库时能接回历史

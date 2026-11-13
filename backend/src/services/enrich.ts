@@ -26,6 +26,8 @@ export interface EnrichedWork {
   folder_path: string
   added_at: string
   updated_at: string
+  /** 上次抓取时 DLsite 的返回状态（'' / ok / region_blocked / not_found / error） */
+  fetch_status: string
   cover_url: string
   actors: string[]
   tags: EnrichedTag[]
@@ -75,6 +77,7 @@ export function enrichWork(row: Record<string, unknown>, userId?: number): Enric
     folder_path: String(row.folder_path || ''),
     added_at: String(row.added_at || ''),
     updated_at: String(row.updated_at || ''),
+    fetch_status: String(row.fetch_status || ''),
     // 有作品封面或用默认封面兜底时都返回封面 URL（路由层负责回退）
     cover_url: row.cover_path || findDefaultCover() ? `/api/cover/${rj}` : '',
     actors,

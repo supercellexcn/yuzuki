@@ -121,6 +121,15 @@
           </el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="DL 状态" width="110">
+        <template #default="{ row }">
+          <el-tooltip :content="dlStatusHint(row.fetch_status)" placement="top">
+            <el-tag :type="dlStatusType(row.fetch_status)" size="small" effect="plain">
+              {{ dlStatusLabel(row.fetch_status) }}
+            </el-tag>
+          </el-tooltip>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="80">
         <template #default="{ row }">
           <el-tag v-if="row.hidden" size="small" type="danger">已隐藏</el-tag>
@@ -170,8 +179,16 @@ import {
   syncAdminWork,
   authedUrl,
 } from '../../api'
-import { CUSTOM_TAG, MISSING_FIELD_LABELS, MISSING_FIELD_OPTIONS } from '../../api/types'
-import type { AdminWork, AdminCircle, AdminActor, AdminSeries, AdminTag, MissingField } from '../../api/types'
+import { CUSTOM_TAG, DL_STATUS_LABELS, MISSING_FIELD_LABELS, MISSING_FIELD_OPTIONS } from '../../api/types'
+import type {
+  AdminWork,
+  AdminCircle,
+  AdminActor,
+  AdminSeries,
+  AdminTag,
+  DlFetchStatus,
+  MissingField,
+} from '../../api/types'
 import { useLibraryStore } from '../../stores/library'
 import { useAdminPageSize } from '../../composables/useAdminPageSize'
 import CoverDialog from './CoverDialog.vue'
@@ -206,6 +223,36 @@ function priceText(v: number | null): string {
 
 function fieldLabel(f: MissingField): string {
   return MISSING_FIELD_LABELS[f]
+}
+
+/**
+ * DL 状态：说明这部作品在 DLsite 侧是什么情况，也就是「该去哪找信息」。
+ * 地区禁售的作品，字段可能是兜底站点补的，换到可用线路后扫描会自动重抓纠正。
+ */
+function dlStatusLabel(s: DlFetchStatus | undefined): string {
+  return DL_STATUS_LABELS[s || ''] || '未记录'
+}
+
+function dlStatusType(s: DlFetchStatus | undefined): 'success' | 'warning' | 'info' | 'danger' {
+  if (s === 'ok') return 'success'
+  if (s === 'region_blocked') return 'warning'
+  if (s === 'error') return 'danger'
+  return 'info'
+}
+
+function dlStatusHint(s: DlFetchStatus | undefined): string {
+  switch (s) {
+    case 'ok':
+      return 'DLsite 正常返回作品页，信息来自 DLsite'
+    case 'region_blocked':
+      return 'DLsite 判定当前线路所在区域不卖这部作品：换到可用线路后重新扫描会自动补齐，不写兜底数据'
+    case 'not_found':
+      return 'DLsite 上没有这部作品（不存在或已下架）：信息来自 DLsite 接口 / 兜底站点，不再重复抓取'
+    case 'error':
+      return '上次抓取时网络异常，下次扫描会重试'
+    default:
+      return '尚未记录（升级前的老数据，下次扫描时写入）'
+  }
 }
 
 async function loadOptions() {

@@ -12,6 +12,16 @@ export interface DlsiteTranslation {
   language_label: string
 }
 
+/**
+ * 本次抓取时 DLsite 侧的返回状态。用于入库后决定「这个作品该去哪找信息」：
+ * - ok：DLsite 正常返回作品页（信息区在），数据可信
+ * - region_blocked：当前出口所在区域不卖（HTTP 200 的限制页），换线路可补齐
+ * - not_found：作品不存在 / 已下架（HTTP 404）
+ * - error：网络、超时等异常，与作品本身无关
+ * - unknown：连请求都没发出去（如新作品首次抓取被中断）
+ */
+export type DlsiteFetchStatus = 'ok' | 'region_blocked' | 'not_found' | 'error' | 'unknown'
+
 export interface DlsiteMeta {
   rj_code: string
   title: string
@@ -22,6 +32,8 @@ export interface DlsiteMeta {
   actors: string[]
   tags: DlsiteTag[]
   cover_url: string
+  /** 封面地址的来源站点：dlsite / hvdb；无封面时为空 */
+  cover_source?: 'dlsite' | 'hvdb' | ''
   /** 「年龄指定」原始文案（全年齢 / R18 …）；拿不到时为空串 */
   age_rating: string
   /** 其它语言版本列表；没有翻译时为空数组 */
@@ -32,4 +44,6 @@ export interface DlsiteMeta {
   rating: number | null
   /** 评论数量；null = 没抓到，0 = 无评论 */
   rating_count: number | null
+  /** 本次抓取的 DLsite 返回状态；调用方据此写 works.fetch_status */
+  fetch_status: DlsiteFetchStatus
 }

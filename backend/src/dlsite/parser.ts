@@ -187,23 +187,30 @@ export function parseWorkPage(html: string, rj_code: string): Partial<DlsiteMeta
   const $ = cheerio.load(html)
   const meta: Partial<DlsiteMeta> = { rj_code, actors: [], tags: [] }
 
-  // 标题：og:title，去掉 "[社团] | DLsite" 后缀
-  let title = $('meta[property="og:title"]').attr('content') || ''
-  title = title.replace(/ \[.+\] \| DLsite$/, '').trim()
-  meta.title = title || $('h1').first().text().trim() || ''
+  // 标题：og:title 形如「标题 [社团] | DLsite」；顺带把 [社团] 留作社团兜底
+  // （地区禁售页不渲染信息区，只有 og:title / og:image，这样标题和社团仍能拿到）
+  const ogTitle = $('meta[property="og:title"]').attr('content') || ''
+  const ogMatch = ogTitle.match(/^(.*?)\s*\[([^\]]+)\]\s*\|\s*DLsite/)
+  meta.title =
+    (ogMatch ? ogMatch[1] : ogTitle.replace(/\s*\|.*$/, '')).trim() ||
+    $('h1').first().text().trim() ||
+    ''
 
-  // 社团：旧布局 span.maker_name > a；新布局「社团名」字段
+  // 社团：旧布局 span.maker_name > a；新布局「社团名」字段；都没有时用 og:title 里的 [社团]
   const circleField = findField($, LABELS.circle)
   meta.circle =
     $('span.maker_name').children('a').first().text().trim() ||
-    (circleField ? circleField.find('a').first().text().trim() || circleField.text().trim() : '')
+    (circleField ? circleField.find('a').first().text().trim() || circleField.text().trim() : '') ||
+    (ogMatch ? ogMatch[2].trim() : '')
 
-  // 封面：og:image 优先
-  meta.cover_url =
-    $('meta[property="og:image"]').attr('content') ||
-    $('#work_left').attr('src') ||
-    $('#main_image img').first().attr('src') ||
-    ''
+  // 封面：og:image 优先。DLsite 的通用宣传图（页面没有作品信息时会退化成这张）不算封面
+  const ogImage = $('meta[property="og:image"]').attr('content') || ''
+  meta.cover_url = /\/modpub\/images\/web\/home\/summary_large_image/i.test(ogImage)
+    ? ''
+    : ogImage ||
+      $('#work_left').attr('src') ||
+      $('#main_image img').first().attr('src') ||
+      ''
 
   // 贩卖日 → YYYY-MM-DD
   const releaseField = findField($, LABELS.release)

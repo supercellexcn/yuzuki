@@ -289,6 +289,20 @@ export interface AdminWork extends Work {
   cover_modified: boolean
   /** 缺失的信息项（评分 / 评论数 / 销量为 0 属正常，不计入缺失） */
   missing: MissingField[]
+  /** 上次抓取时 DLsite 的返回状态，决定这个作品该去哪找信息 */
+  fetch_status?: DlFetchStatus
+}
+
+/** 与后端 works.fetch_status 对应：'' = 未记录（旧数据 / 从未抓取） */
+export type DlFetchStatus = '' | 'ok' | 'region_blocked' | 'not_found' | 'error' | 'unknown'
+
+export const DL_STATUS_LABELS: Record<string, string> = {
+  '': '未记录',
+  ok: 'DL 正常',
+  region_blocked: '地区禁售',
+  not_found: 'DL 无此作品',
+  error: '抓取失败',
+  unknown: '未记录',
 }
 
 /** 作品信息缺失项，与后端 workService.MISSING_FIELDS 一一对应。 */
