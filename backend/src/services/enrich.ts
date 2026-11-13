@@ -15,6 +15,12 @@ export interface EnrichedWork {
   release_date: string
   series: string
   sales_count: number | null
+  /** 发售价格（日元）；null = 没抓到，0 = 免费 */
+  price: number | null
+  /** 平均评分；null = 没抓到，0 = 无评分 */
+  rating: number | null
+  /** 评论数量；null = 没抓到，0 = 无评论 */
+  rating_count: number | null
   play_count: number
   file_count: number
   folder_path: string
@@ -61,6 +67,9 @@ export function enrichWork(row: Record<string, unknown>, userId?: number): Enric
     release_date: String(row.release_date || ''),
     series: String(row.series || ''),
     sales_count: row.sales_count == null ? null : Number(row.sales_count),
+    price: row.price == null ? null : Number(row.price),
+    rating: row.rating == null ? null : Number(row.rating),
+    rating_count: row.rating_count == null ? null : Number(row.rating_count),
     play_count: playCount,
     file_count: Number(row.file_count || 0),
     folder_path: String(row.folder_path || ''),

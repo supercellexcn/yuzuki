@@ -51,14 +51,16 @@
         <el-option v-for="t in tags" :key="t.name + t.category" :value="t.name" :label="t.name" />
       </el-select>
       <el-select
-        v-model="filters.hasCover"
-        placeholder="是否有封面"
+        v-model="filters.missing"
+        placeholder="信息缺失"
+        multiple
+        collapse-tags
+        collapse-tags-tooltip
         clearable
-        style="width: 130px"
+        style="width: 200px"
         @change="onFilterChange"
       >
-        <el-option value="1" label="有封面" />
-        <el-option value="0" label="无封面" />
+        <el-option v-for="f in MISSING_FIELD_OPTIONS" :key="f" :value="f" :label="MISSING_FIELD_LABELS[f]" />
       </el-select>
       <el-button :loading="loading" @click="load">刷新</el-button>
     </div>
@@ -93,6 +95,29 @@
             :class="{ 'tag-custom': t.category === CUSTOM_TAG }"
           >
             {{ t.name }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="评分 / 评论 / 价格" width="140">
+        <template #default="{ row }">
+          <div class="stats-line">
+            {{ row.rating == null && row.rating_count == null ? '—' : `${row.rating ?? 0} 分（${row.rating_count ?? 0}）` }}
+          </div>
+          <div class="stats-line">{{ priceText(row.price) }}</div>
+        </template>
+      </el-table-column>
+      <el-table-column label="信息缺失" width="170">
+        <template #default="{ row }">
+          <el-tag v-if="!row.missing.length" size="small" type="success" effect="plain">完整</el-tag>
+          <el-tag
+            v-for="f in row.missing"
+            :key="f"
+            size="small"
+            type="danger"
+            effect="plain"
+            class="missing-tag"
+          >
+            {{ fieldLabel(f) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -145,8 +170,8 @@ import {
   syncAdminWork,
   authedUrl,
 } from '../../api'
-import { CUSTOM_TAG } from '../../api/types'
-import type { AdminWork, AdminCircle, AdminActor, AdminSeries, AdminTag } from '../../api/types'
+import { CUSTOM_TAG, MISSING_FIELD_LABELS, MISSING_FIELD_OPTIONS } from '../../api/types'
+import type { AdminWork, AdminCircle, AdminActor, AdminSeries, AdminTag, MissingField } from '../../api/types'
 import { useLibraryStore } from '../../stores/library'
 import { useAdminPageSize } from '../../composables/useAdminPageSize'
 import CoverDialog from './CoverDialog.vue'
@@ -161,7 +186,7 @@ const page = ref(1)
 const loading = ref(false)
 const coverVersion = ref(0)
 
-const filters = reactive({ q: '', circle: '', series: '', actor: '', tag: '', hasCover: '' })
+const filters = reactive({ q: '', circle: '', series: '', actor: '', tag: '', missing: [] as MissingField[] })
 const circles = ref<AdminCircle[]>([])
 const series = ref<AdminSeries[]>([])
 const actors = ref<AdminActor[]>([])
@@ -172,6 +197,16 @@ const coverRj = ref('')
 const tagVisible = ref(false)
 const tagWork = ref<AdminWork | null>(null)
 const syncingRj = ref('')
+
+/** 价格展示：null = 没抓到，0 = 免费 */
+function priceText(v: number | null): string {
+  if (v == null) return '价格未知'
+  return v === 0 ? '免费' : `¥${v.toLocaleString()}`
+}
+
+function fieldLabel(f: MissingField): string {
+  return MISSING_FIELD_LABELS[f]
+}
 
 async function loadOptions() {
   try {
@@ -199,7 +234,7 @@ async function load() {
       series: filters.series || undefined,
       actor: filters.actor || undefined,
       tag: filters.tag || undefined,
-      hasCover: filters.hasCover as '1' | '0' | '',
+      missing: filters.missing.length ? filters.missing.join(',') : undefined,
       page: page.value,
       pageSize: pageSize.value,
     })
@@ -325,5 +360,13 @@ onMounted(async () => {
 .pager {
   display: flex;
   justify-content: flex-end;
+}
+.stats-line {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 18px;
+}
+.missing-tag {
+  margin: 0 4px 4px 0;
 }
 </style>

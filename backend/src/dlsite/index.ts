@@ -8,9 +8,16 @@ import type { DlsiteMeta } from './types.js'
 
 interface DlsiteAjaxItem {
   dl_count?: string | number
-  rate_average_2dp?: number
-  rate_count?: number
-  price?: number
+  rate_average_2dp?: number | string
+  rate_count?: number | string
+  price?: number | string
+}
+
+/** 数字字段解析：空串 / undefined / NaN 一律视为「没抓到」（null），0 保留为有效值。 */
+export function toNumber(v: unknown): number | null {
+  if (v == null || v === '') return null
+  const n = Number(String(v).replace(/,/g, ''))
+  return Number.isFinite(n) ? n : null
 }
 
 function absolutize(url: string, base: string): string {
@@ -51,7 +58,16 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
   })
 
   // 1) HTML 主源：作品页 → 失败则试 announce 预告页（结构与作品页同构，复用同一解析器）
-  const meta: Partial<DlsiteMeta> = { rj_code, actors: [], tags: [], translations: [], age_rating: '' }
+  const meta: Partial<DlsiteMeta> = {
+    rj_code,
+    actors: [],
+    tags: [],
+    translations: [],
+    age_rating: '',
+    price: null,
+    rating: null,
+    rating_count: null,
+  }
   try {
     const html = await fetchHtml(url, { retryOn404: false })
     Object.assign(meta, parseWorkPage(html, rj_code))
@@ -137,14 +153,24 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
     }
   }
 
-  // 6) 销量：触摸版 JSON 优先，拿不到则用 api1.dl_count
+  // 6) 动态数据（销量 / 价格 / 评分 / 评论数）：触摸版 JSON 一次拿全，api1 兜价格。
+  //    这四项是随时间变化的，重抓时以最新值为准；null 表示本次没抓到，调用方不会覆盖旧值。
   const data = await jsonPromise
   const item = data?.[rj_code]
-  if (item?.dl_count != null) {
-    meta.sales_count = Number(String(item.dl_count).replace(/,/g, '')) || null
-  } else if (api1?.dl_count != null) {
-    meta.sales_count = Number(String(api1.dl_count).replace(/,/g, '')) || null
+  if (item) {
+    const sales = toNumber(item.dl_count)
+    if (sales != null) meta.sales_count = sales
+    const price = toNumber(item.price)
+    if (price != null) meta.price = price
+    const rating = toNumber(item.rate_average_2dp)
+    if (rating != null) meta.rating = rating
+    const ratingCount = toNumber(item.rate_count)
+    if (ratingCount != null) meta.rating_count = ratingCount
   }
+  if (meta.sales_count == null && api1?.dl_count != null) {
+    meta.sales_count = toNumber(api1.dl_count)
+  }
+  if (meta.price == null) meta.price = toNumber(api1?.price)
 
   // 7) 全部来源（DLsite 各接口 + HVDB）都无有效信息才算失败（调用方据此保留旧数据 / 记 error）
   const hasAny =

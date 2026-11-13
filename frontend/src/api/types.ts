@@ -18,6 +18,12 @@ export interface Work {
   release_date: string
   series: string
   sales_count: number | null
+  /** 发售价格（日元）；null = 没抓到，0 = 免费 */
+  price: number | null
+  /** 平均评分；null = 没抓到，0 = 无评分 */
+  rating: number | null
+  /** 评论数量；null = 没抓到，0 = 无评论 */
+  rating_count: number | null
   play_count: number
   file_count: number
   folder_path: string
@@ -77,6 +83,8 @@ export interface CoverJob {
   current: string
   downloaded: number
   skipped: number
+  /** 本次更新了价格 / 评分 / 评论数 / 销量的作品数 */
+  statsUpdated: number
   errors: string[]
   startedAt: string | null
   finishedAt: string | null
@@ -279,7 +287,24 @@ export const ALL_AGES_TAG = '全年龄'
 export interface AdminWork extends Work {
   hidden: boolean
   cover_modified: boolean
+  /** 缺失的信息项（评分 / 评论数 / 销量为 0 属正常，不计入缺失） */
+  missing: MissingField[]
 }
+
+/** 作品信息缺失项，与后端 workService.MISSING_FIELDS 一一对应。 */
+export type MissingField = 'title' | 'circle' | 'cover' | 'release_date' | 'price' | 'tags'
+
+export const MISSING_FIELD_LABELS: Record<MissingField, string> = {
+  title: '标题',
+  circle: '社团',
+  cover: '封面',
+  release_date: '发售日',
+  price: '价格',
+  tags: '类型标签',
+}
+
+/** 筛选下拉用的选项顺序 */
+export const MISSING_FIELD_OPTIONS: MissingField[] = ['title', 'circle', 'cover', 'release_date', 'price', 'tags']
 
 export interface AdminWorkDetail extends AdminWork {
   files: MediaFile[]

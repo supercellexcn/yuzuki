@@ -95,6 +95,8 @@ export interface CoverJob {
   current: string
   downloaded: number
   skipped: number
+  /** 本次更新了价格 / 评分 / 评论数 / 销量的作品数（勾选「更新评论、评分、销量数据」时才有值） */
+  statsUpdated: number
   errors: string[]
   startedAt: string | null
   finishedAt: string | null
@@ -107,6 +109,7 @@ const coverJob: CoverJob = {
   current: '',
   downloaded: 0,
   skipped: 0,
+  statsUpdated: 0,
   errors: [],
   startedAt: null,
   finishedAt: null,
@@ -116,7 +119,7 @@ export function getCoverJob(): CoverJob {
   return { ...coverJob, errors: [...coverJob.errors] }
 }
 
-export async function startCoverRedownload(): Promise<boolean> {
+export async function startCoverRedownload(refreshStats = false): Promise<boolean> {
   if (coverJob.status === 'running') return false
   coverJob.status = 'running'
   coverJob.total = 0
@@ -124,15 +127,16 @@ export async function startCoverRedownload(): Promise<boolean> {
   coverJob.current = ''
   coverJob.downloaded = 0
   coverJob.skipped = 0
+  coverJob.statsUpdated = 0
   coverJob.errors = []
   coverJob.startedAt = new Date().toISOString()
   coverJob.finishedAt = null
   // 与扫描一致：后台执行，立即返回
-  void runCoverRedownload()
+  void runCoverRedownload(refreshStats)
   return true
 }
 
-async function runCoverRedownload(): Promise<void> {
+async function runCoverRedownload(refreshStats: boolean): Promise<void> {
   try {
     const settings = getSettings()
     const r = await redownloadCovers(
@@ -141,10 +145,12 @@ async function runCoverRedownload(): Promise<void> {
         coverJob.done = done
         coverJob.total = total
       },
-      settings.scan_concurrency || 5
+      settings.scan_concurrency || 5,
+      refreshStats
     )
     coverJob.downloaded = r.downloaded
     coverJob.skipped = r.skipped
+    coverJob.statsUpdated = r.statsUpdated
     coverJob.errors.push(...r.errors)
     coverJob.status = 'done'
   } catch (e) {

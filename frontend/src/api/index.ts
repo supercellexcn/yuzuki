@@ -198,8 +198,8 @@ export async function resumeScan(): Promise<{ ok: boolean }> {
   return data
 }
 
-export async function startCoverRedownload(): Promise<{ ok: boolean }> {
-  const { data } = await http.post('/scan/redownload-covers')
+export async function startCoverRedownload(refreshStats = false): Promise<{ ok: boolean }> {
+  const { data } = await http.post('/scan/redownload-covers', { refresh_stats: refreshStats })
   return data
 }
 
@@ -320,7 +320,8 @@ export async function getAdminWorks(params: {
   actor?: string
   series?: string
   tag?: string
-  hasCover?: '1' | '0' | ''
+  /** 逗号分隔的缺失项，命中「缺任意一项」的作品 */
+  missing?: string
   page?: number
   pageSize?: number
 }): Promise<AdminWorksResponse> {

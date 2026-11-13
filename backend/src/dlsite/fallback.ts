@@ -43,6 +43,8 @@ export interface Api1Data {
   regist_date?: string
   work_image?: string
   dl_count?: string | number
+  /** 价格（日元）；下架作品也能返回 */
+  price?: string | number
   is_sale?: boolean
 }
 

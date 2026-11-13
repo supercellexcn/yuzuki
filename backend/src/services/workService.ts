@@ -20,6 +20,8 @@ export interface CoverRedownloadResult {
   total: number
   downloaded: number
   skipped: number
+  /** 本次更新了价格 / 评分 / 评论数 / 销量的作品数 */
+  statsUpdated: number
   errors: string[]
 }
 
@@ -31,6 +33,9 @@ interface WorkRow {
   release_date: string
   series: string
   sales_count: number | null
+  price: number | null
+  rating: number | null
+  rating_count: number | null
   cover_path: string
   folder_path: string
   source_path: string
@@ -79,14 +84,67 @@ export async function upsertWorkFolder(
   return { created }
 }
 
-/** 判断现有作品是否需要补抓 DLsite：标题为空、无声优、或封面文件缺失。 */
+/** 「信息是否完整」的判定项：只有这些缺了才算不完整。 */
+export const MISSING_FIELDS = {
+  title: '标题',
+  circle: '社团',
+  cover: '封面',
+  release_date: '发售日',
+  price: '价格',
+  tags: '类型标签',
+} as const
+
+export type MissingField = keyof typeof MISSING_FIELDS
+
+interface MissingCheckRow {
+  id: number
+  title?: unknown
+  circle?: unknown
+  release_date?: unknown
+  price?: unknown
+  cover_path?: unknown
+}
+
+function coverFileExists(coverPath: string): boolean {
+  if (!coverPath) return false
+  return fs.existsSync(path.join(getCoverDir(), path.basename(coverPath)))
+}
+
+/** 原生标签（DLsite 类型标签）数量；「全年龄」等自定义标签不算。 */
+function nativeTagCount(db: DatabaseSync, workId: number): number {
+  const { c } = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM work_tags wt JOIN tags t ON t.id = wt.tag_id
+       WHERE wt.work_id = ? AND t.category != ?`
+    )
+    .get(workId, CUSTOM_TAG) as { c: number }
+  return c
+}
+
+/**
+ * 列出作品缺失的信息项。
+ *
+ * 判定只依赖库里的字段，不关心数据来自 DLsite 页面还是兜底接口 —— 这样
+ * 「DLsite 上没有这个作品」与「作品在当前离线地区不卖」在库里表现一致（都缺），
+ * 下次扫描只要还是缺就会继续抓，换到可用线路后自然补齐。
+ *
+ * 系列、评分、评论数、销量、其它语言版本都不算必需项：
+ * 前两者可能真的没有，后两者是 0 也合理（NULL 才代表没抓到）。
+ */
+export function missingFieldsOf(db: DatabaseSync, row: MissingCheckRow): MissingField[] {
+  const out: MissingField[] = []
+  if (!String(row.title || '').trim()) out.push('title')
+  if (!String(row.circle || '').trim()) out.push('circle')
+  if (!coverFileExists(String(row.cover_path || ''))) out.push('cover')
+  if (!String(row.release_date || '').trim()) out.push('release_date')
+  if (row.price == null) out.push('price')
+  if (!nativeTagCount(db, Number(row.id))) out.push('tags')
+  return out
+}
+
+/** 判断现有作品是否需要补抓 DLsite：只要还有必需项缺失就抓。 */
 function needsMetadataRefresh(db: DatabaseSync, existing: WorkRow): boolean {
-  if (!existing.title) return true
-  const { c } = db.prepare('SELECT COUNT(*) AS c FROM work_actors WHERE work_id = ?').get(existing.id) as { c: number }
-  if (!c) return true
-  if (!existing.cover_path) return true
-  const file = path.join(getCoverDir(), path.basename(existing.cover_path))
-  return !fs.existsSync(file)
+  return missingFieldsOf(db, existing).length > 0
 }
 
 /** 补抓元数据，最多重试 2 次，失败记录日志。 */
@@ -130,8 +188,8 @@ async function createWork(
   const now = new Date().toISOString()
   const info = db
     .prepare(
-      `INSERT INTO works (rj_code, title, circle, release_date, series, sales_count, cover_path, folder_path, source_path, added_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO works (rj_code, title, circle, release_date, series, sales_count, price, rating, rating_count, cover_path, folder_path, source_path, added_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       rj,
@@ -140,6 +198,9 @@ async function createWork(
       meta.release_date || '',
       meta.series || '',
       meta.sales_count ?? null,
+      meta.price ?? null,
+      meta.rating ?? null,
+      meta.rating_count ?? null,
       coverPath,
       folder,
       source,
@@ -163,14 +224,20 @@ async function refreshMetadata(db: DatabaseSync, workId: number, rj: string): Pr
     coverPath = await saveCover(rj, meta.cover_url)
   }
   db.prepare(
-    `UPDATE works SET title = ?, circle = ?, release_date = ?, series = ?, sales_count = ?, cover_path = ?, updated_at = ? WHERE id = ?`
+    `UPDATE works SET title = ?, circle = ?, release_date = ?, series = ?, cover_path = ?,
+       sales_count = COALESCE(?, sales_count), price = COALESCE(?, price),
+       rating = COALESCE(?, rating), rating_count = COALESCE(?, rating_count),
+       updated_at = ? WHERE id = ?`
   ).run(
     meta.title || '',
     meta.circle || '',
     meta.release_date || '',
     meta.series || '',
-    meta.sales_count ?? null,
     coverPath,
+    meta.sales_count ?? null,
+    meta.price ?? null,
+    meta.rating ?? null,
+    meta.rating_count ?? null,
     new Date().toISOString(),
     workId
   )
@@ -198,14 +265,20 @@ export async function syncWork(db: DatabaseSync, workId: number, rj: string): Pr
     }
   }
   db.prepare(
-    `UPDATE works SET title = ?, circle = ?, release_date = ?, series = ?, sales_count = ?, cover_path = ?, updated_at = ? WHERE id = ?`
+    `UPDATE works SET title = ?, circle = ?, release_date = ?, series = ?, cover_path = ?,
+       sales_count = COALESCE(?, sales_count), price = COALESCE(?, price),
+       rating = COALESCE(?, rating), rating_count = COALESCE(?, rating_count),
+       updated_at = ? WHERE id = ?`
   ).run(
     meta.title || '',
     meta.circle || '',
     meta.release_date || '',
     meta.series || '',
-    meta.sales_count ?? null,
     coverPath,
+    meta.sales_count ?? null,
+    meta.price ?? null,
+    meta.rating ?? null,
+    meta.rating_count ?? null,
     new Date().toISOString(),
     workId
   )
@@ -445,10 +518,14 @@ function sleep(ms: number): Promise<void> {
 /**
  * 重新下载缺失的封面：遍历所有作品，若封面文件在当前封面目录里不存在，
  * 则抓取 DLsite 元数据并下载。已有封面文件的作品跳过。支持并发。
+ *
+ * refreshStats = true 时对**所有**作品都抓一次元数据，更新价格 / 评分 / 评论数 / 销量
+ * （这四项随时间变化，封面存在的作品也会处理）；封面仍只在缺失时下载。
  */
 export async function redownloadCovers(
   onProgress: (current: string, done: number, total: number) => void,
-  concurrency = 5
+  concurrency = 5,
+  refreshStats = false
 ): Promise<CoverRedownloadResult> {
   const db = getDb()
   const works = db.prepare('SELECT id, rj_code, cover_path FROM works').all() as unknown as Array<{
@@ -457,7 +534,13 @@ export async function redownloadCovers(
     cover_path: string
   }>
   const coversDir = getCoverDir()
-  const result: CoverRedownloadResult = { total: works.length, downloaded: 0, skipped: 0, errors: [] }
+  const result: CoverRedownloadResult = {
+    total: works.length,
+    downloaded: 0,
+    skipped: 0,
+    statsUpdated: 0,
+    errors: [],
+  }
 
   let done = 0
   let nextIndex = 0
@@ -469,11 +552,30 @@ export async function redownloadCovers(
       onProgress(w.rj_code, done, works.length)
       try {
         const existing = w.cover_path ? path.join(coversDir, path.basename(w.cover_path)) : ''
-        if (existing && fs.existsSync(existing)) {
+        const hasCover = Boolean(existing) && fs.existsSync(existing)
+        if (hasCover && !refreshStats) {
           result.skipped++
         } else {
           const meta = await fetchWorkMeta(w.rj_code)
-          if (meta.cover_url) {
+          if (refreshStats) {
+            // 动态数据：抓不到（null）时保留旧值，抓到了就覆盖
+            db.prepare(
+              `UPDATE works SET sales_count = COALESCE(?, sales_count), price = COALESCE(?, price),
+                 rating = COALESCE(?, rating), rating_count = COALESCE(?, rating_count),
+                 updated_at = ? WHERE id = ?`
+            ).run(
+              meta.sales_count ?? null,
+              meta.price ?? null,
+              meta.rating ?? null,
+              meta.rating_count ?? null,
+              new Date().toISOString(),
+              w.id
+            )
+            result.statsUpdated++
+          }
+          if (hasCover) {
+            result.skipped++
+          } else if (meta.cover_url) {
             const p = await saveCover(w.rj_code, meta.cover_url)
             // 封面文件缺失时重新下载的是原始封面：复位手动封面标记，回到「未修改」语义
             db.prepare(

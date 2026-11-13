@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS works (
   release_date TEXT NOT NULL DEFAULT '',
   series TEXT NOT NULL DEFAULT '',
   sales_count INTEGER,
+  price INTEGER,
+  rating REAL,
+  rating_count INTEGER,
   cover_path TEXT NOT NULL DEFAULT '',
   folder_path TEXT NOT NULL DEFAULT '',
   source_path TEXT NOT NULL DEFAULT '',
@@ -194,6 +197,18 @@ function migrate(d: DatabaseSync): void {
   }
   if (!w.some((c) => c.name === 'original_cover_path')) {
     d.exec("ALTER TABLE works ADD COLUMN original_cover_path TEXT NOT NULL DEFAULT ''")
+  }
+
+  // works 动态数据列：price / rating / rating_count 用 NULL 表示「没抓到」，
+  // 与 0（确实免费 / 无评分 / 无评论）区分开 —— 「信息是否完整」的判定依赖这一点。
+  if (!w.some((c) => c.name === 'price')) {
+    d.exec('ALTER TABLE works ADD COLUMN price INTEGER')
+  }
+  if (!w.some((c) => c.name === 'rating')) {
+    d.exec('ALTER TABLE works ADD COLUMN rating REAL')
+  }
+  if (!w.some((c) => c.name === 'rating_count')) {
+    d.exec('ALTER TABLE works ADD COLUMN rating_count INTEGER')
   }
 
   // play_history.rj_code：以 RJ 号作为稳定关联键，作品被删后重新入库时能接回历史

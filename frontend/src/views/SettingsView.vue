@@ -314,6 +314,9 @@
       <el-button v-if="scanJob?.status === 'running' && !scanJob.paused" @click="doPause">暂停</el-button>
       <el-button v-if="scanJob?.status === 'running' && scanJob.paused" type="warning" @click="doResume">继续</el-button>
       <el-button :loading="coverRunning" @click="doCoverRedownload">重新下载缺失封面</el-button>
+      <el-checkbox v-model="refreshStats" :disabled="coverRunning" class="stats-check">
+        更新评论、评分、销量数据
+      </el-checkbox>
     </div>
 
     <div class="card danger-card">
@@ -368,7 +371,9 @@
         :percentage="Math.round((coverJob.done / coverJob.total) * 100)"
       />
       <div v-if="coverJob.status === 'done'" class="removed-note">
-        已下载 {{ coverJob.downloaded }} 个，跳过 {{ coverJob.skipped }} 个
+        已下载 {{ coverJob.downloaded }} 个，跳过 {{ coverJob.skipped }} 个<template v-if="coverJob.statsUpdated">
+          ，更新价格 / 评分 / 评论数 / 销量 {{ coverJob.statsUpdated }} 个</template
+        >
       </div>
       <div v-if="coverJob.errors.length" class="errors">
         <div v-for="(e, i) in coverJob.errors.slice(0, 20)" :key="i" class="err">⚠ {{ e }}</div>
@@ -451,6 +456,8 @@ const scanning = ref(false)
 const scanJob = ref<ScanJob | null>(null)
 const coverRunning = ref(false)
 const coverJob = ref<CoverJob | null>(null)
+/** 勾选后「重新下载缺失封面」会对所有作品更新价格 / 评分 / 评论数 / 销量 */
+const refreshStats = ref(false)
 const resetting = ref(false)
 let timer: number | undefined
 let coverTimer: number | undefined
@@ -900,7 +907,7 @@ async function doCoverRedownload() {
   await save()
   coverRunning.value = true
   try {
-    await startCoverRedownload()
+    await startCoverRedownload(refreshStats.value)
     coverJob.value = await getCoverStatus()
     startCoverPolling()
   } catch (e) {
@@ -1134,6 +1141,11 @@ function resetThemeColors() {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+  align-items: center;
+}
+.stats-check {
+  font-size: 13px;
+  color: var(--muted);
 }
 .danger-card {
   border-color: rgba(238, 136, 136, 0.4);

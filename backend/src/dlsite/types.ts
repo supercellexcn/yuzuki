@@ -26,4 +26,10 @@ export interface DlsiteMeta {
   age_rating: string
   /** 其它语言版本列表；没有翻译时为空数组 */
   translations: DlsiteTranslation[]
+  /** 发售价格（日元）；null = 没抓到，0 = 确实免费 */
+  price: number | null
+  /** 平均评分；null = 没抓到，0 = 无评分 */
+  rating: number | null
+  /** 评论数量；null = 没抓到，0 = 无评论 */
+  rating_count: number | null
 }

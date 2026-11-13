@@ -35,9 +35,10 @@ scanRouter.post('/resume', (_req, res) => {
   res.json({ ok: true })
 })
 
-// 重新下载缺失封面
-scanRouter.post('/redownload-covers', async (_req, res) => {
-  const ok = await startCoverRedownload()
+// 重新下载缺失封面；{ refresh_stats: true } 时顺带更新所有作品的价格 / 评分 / 评论数 / 销量
+scanRouter.post('/redownload-covers', async (req, res) => {
+  const refreshStats = req.body?.refresh_stats === true
+  const ok = await startCoverRedownload(refreshStats)
   res.json({ ok })
 })
 

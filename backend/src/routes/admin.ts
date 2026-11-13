@@ -3,19 +3,31 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { getDb } from '../db/connection.js'
 import { enrichWork } from '../services/enrich.js'
-import { setManualCover, restoreWorkCover, syncWork } from '../services/workService.js'
+import { setManualCover, restoreWorkCover, syncWork, missingFieldsOf } from '../services/workService.js'
 import { ALL_AGES_TAG, CUSTOM_TAG, hiddenWorkFlag } from '../services/hidden.js'
 
 export const adminRouter = Router()
 
 const HIDDEN_TYPES = new Set(['work', 'series', 'circle', 'actor', 'tag'])
 
+/** 「信息缺失」筛选项 → SQL 条件。封面按 cover_path 是否为空判断（文件丢失由扫描补齐）。 */
+const MISSING_COND: Record<string, string> = {
+  title: "TRIM(w.title) = ''",
+  circle: "TRIM(w.circle) = ''",
+  cover: "w.cover_path = ''",
+  release_date: "TRIM(w.release_date) = ''",
+  price: 'w.price IS NULL',
+  tags: `NOT EXISTS (SELECT 1 FROM work_tags wt JOIN tags t ON t.id = wt.tag_id
+         WHERE wt.work_id = w.id AND t.category != '${CUSTOM_TAG}')`,
+}
+
 function clampPage(v: unknown, fallback: number, max: number): number {
   const n = Number(v)
   return Math.max(1, Math.min(max, Number.isFinite(n) && n >= 1 ? Math.floor(n) : fallback))
 }
 
-// GET /api/admin/works?page=&pageSize=20&q=&circle=&actor=&series=&tag=&hasCover=1|0
+// GET /api/admin/works?page=&pageSize=20&q=&circle=&actor=&series=&tag=&missing=title,cover
+// missing 为逗号分隔的缺失项，命中「缺任意一项」的作品；可选项见 workService.MISSING_FIELDS
 adminRouter.get('/works', (req, res) => {
   const db = getDb()
   const page = clampPage(req.query.page, 1, 1e9)
@@ -26,7 +38,10 @@ adminRouter.get('/works', (req, res) => {
   const actor = String(req.query.actor || '').trim()
   const series = String(req.query.series || '').trim()
   const tag = String(req.query.tag || '').trim()
-  const hasCover = String(req.query.hasCover || '').trim()
+  const missing = String(req.query.missing || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
 
   const where: string[] = []
   const params: Array<string | number> = []
@@ -58,8 +73,9 @@ adminRouter.get('/works', (req, res) => {
     )
     params.push(tag)
   }
-  if (hasCover === '1') where.push(`w.cover_path != ''`)
-  else if (hasCover === '0') where.push(`w.cover_path = ''`)
+  // 信息缺失筛选：勾选多项时为「缺任意一项」；评分 / 评论数为 0 属于正常，不参与缺失判定
+  const missingConds = missing.map((k) => MISSING_COND[k]).filter(Boolean)
+  if (missingConds.length) where.push(`(${missingConds.join(' OR ')})`)
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
   const total = (db.prepare(`SELECT COUNT(*) AS c FROM works w ${whereSql}`).get(...params) as { c: number }).c
@@ -75,6 +91,7 @@ adminRouter.get('/works', (req, res) => {
       ...enrichWork(r),
       hidden: Number(r.hidden) === 1,
       cover_modified: Number(r.cover_modified) === 1,
+      missing: missingFieldsOf(db, r as unknown as { id: number }),
     })),
     total,
     page,
@@ -100,6 +117,7 @@ adminRouter.get('/works/:rj', (req, res) => {
     ...enrichWork(row),
     hidden: Number(row.hidden) === 1,
     cover_modified: Number(row.cover_modified) === 1,
+    missing: missingFieldsOf(db, row as unknown as { id: number }),
     translations,
     files,
   })
