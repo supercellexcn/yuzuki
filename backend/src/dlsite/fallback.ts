@@ -11,30 +11,62 @@ import { fetchHtml, fetchJson } from './client.js'
  */
 
 export interface Api2Creator {
-  name: string
+  name?: string
+  /** 创作者角色：DLsite 用 voice_by / illust_by / scenario_by 等 */
+  type?: string
+  type_string?: string
 }
 
 export interface Api2Genre {
-  name: string
+  name?: string
+  id?: number | string
+  search_val?: string
 }
 
+/** api2 的 `language_editions`：同一作品的其它语言版本（各自独立 RJ 号） */
+export interface Api2Edition {
+  workno?: string
+  lang?: string
+  label?: string
+}
+
+/**
+ * api2 `/maniax/api/=/product.json` 的真实返回结构（按 2026-11 线上样本核对）。
+ *
+ * 与早期实现的三处差异，改动前务必注意：
+ * 1. `creaters` 是**数组**（`[{ name, type }]`），不是 `{ voice_by: [...] }` 对象；
+ * 2. `age_category` 是**数字编码**（3 = 成人向），可读值在 `age_category_string`（adult / general）；
+ * 3. 没有 `is_sale`，在售标记是 `on_sale`；`custom_genres` 是优惠券（对象数组），不是类型标签。
+ */
 export interface Api2Data {
+  workno?: string
+  product_id?: string
   work_name?: string
   maker_name?: string
   maker_id?: number | string
   regist_date?: string
+  /** 系列名（对应 HTML 里的「シリーズ名」） */
+  title_name?: string
+  series_name?: string
   image_main?: { url?: string }
   work_image?: string
-  /** 年龄分级：all（全年龄）/ r18（成人向）。页面拿不到「年齢指定」时用它兜底 */
-  age_category?: string
-  creaters?: {
-    voice_by?: Api2Creator[]
-    scenario_by?: Api2Creator[]
-    illust_by?: Api2Creator[]
-    music_by?: Api2Creator[]
-  }
+  age_category?: string | number
+  /** 可读年龄分级：general（全年龄）/ adult（成人向） */
+  age_category_string?: string
+  creaters?: Api2Creator[] | { voice_by?: Api2Creator[] }
   genres?: Api2Genre[]
-  is_sale?: boolean
+  genres_replaced?: Api2Genre[]
+  language_editions?: Api2Edition[]
+  official_price?: number | string
+  price?: number | string
+  on_sale?: number | string | boolean
+  /** 作品类型：SOU（音声）/ ICG（CG・イラスト）/ MNG（漫画）… */
+  work_type?: string
+  /** 星级（0~50，精度 0.1）；两位小数的精确评分只在 api1 的 rate_average_2dp */
+  rate_average_star?: number | string
+  /** 评分分布，各档求和即为评分人数（等于 api1 的 rate_count） */
+  rate_count_detail?: Record<string, number | string> | Array<{ count?: number | string }>
+  update_date?: string
 }
 
 export interface Api1Data {
@@ -58,11 +90,18 @@ function getDlsiteBase(): string {
   return (getSettings().dlsite_base || 'https://www.dlsite.com').replace(/\/+$/, '')
 }
 
-/** 惰性调用时用：任意异常/空对象都返回 null。 */
+/**
+ * 惰性调用时用：任意异常/空对象都返回 null。
+ *
+ * 固定带 `locale=ja-JP`：标题等文案必须与库里已有的日文原名一致，
+ * 否则换线路抓一次就变成另一种语言，看起来像两部作品。
+ */
 export async function fetchApi2(rj: string): Promise<Api2Data | null> {
   try {
     const base = getDlsiteBase()
-    const data = await fetchJson<Api2Data | Api2Data[]>(`${base}/maniax/api/=/product.json?workno=${rj}`)
+    const data = await fetchJson<Api2Data | Api2Data[]>(
+      `${base}/maniax/api/=/product.json?workno=${encodeURIComponent(rj)}&locale=ja-JP`
+    )
     const item = Array.isArray(data) ? data[0] : data
     if (!item || typeof item !== 'object' || Object.keys(item).length === 0) return null
     return item

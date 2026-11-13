@@ -2,9 +2,9 @@ import { getSettings } from '../settings.js'
 import { fetchHtml, fetchJson } from './client.js'
 import { parseWorkPage } from './parser.js'
 import { fetchApi1, fetchApi2, fetchCircleName, absolutizeCover, normalizeReleaseDate } from './fallback.js'
-import type { Api1Data, Api2Data } from './fallback.js'
+import type { Api1Data, Api2Data, Api2Creator, Api2Edition } from './fallback.js'
 import { fetchHvdbMeta } from './hvdb.js'
-import type { DlsiteFetchStatus, DlsiteMeta } from './types.js'
+import type { DlsiteFetchStatus, DlsiteMeta, DlsiteTranslation } from './types.js'
 
 export interface DlsiteAjaxItem {
   dl_count?: string | number
@@ -100,24 +100,153 @@ export function shouldUseFallbackSite(status: string | undefined, meta: Partial<
   return !meta.title || !meta.circle || !meta.actors?.length || !meta.tags?.length
 }
 
+/** api2 的 `language_editions.lang` → 项目内部的语言码与展示名。 */
+const EDITION_LANGS: Record<string, { code: string; label: string }> = {
+  JPN: { code: 'ja', label: '日本語' },
+  ENG: { code: 'en', label: 'English' },
+  CHI_HANS: { code: 'zh-Hans', label: '简体中文' },
+  CHI_HANT: { code: 'zh-Hant', label: '繁體中文' },
+  KO_KR: { code: 'ko', label: '한국어' },
+  SPA: { code: 'es', label: 'Español' },
+  FRE: { code: 'fr', label: 'Français' },
+  GER: { code: 'de', label: 'Deutsch' },
+  ITA: { code: 'it', label: 'Italiano' },
+  POR: { code: 'pt', label: 'Português' },
+  SWE: { code: 'sv', label: 'Svenska' },
+  THA: { code: 'th', label: 'ไทย' },
+  VIE: { code: 'vi', label: 'Tiếng Việt' },
+  IND: { code: 'id', label: 'Indonesia' },
+}
+
+/**
+ * api2 的 `creaters` 有两种真实形态：`{ voice_by: [...] }` 对象与 `[...]` 数组。
+ *
+ * 数组形态下元素带 `type`（voice_by / illust_by …）时只取声优；整组都没有 type 信息
+ * （接口改版）时整体采信 —— 宁可多抓也不能一个声优都拿不到。
+ */
+export function api2Actors(creaters: Api2Data['creaters']): string[] {
+  if (!creaters) return []
+  const names = (list: unknown): string[] =>
+    Array.isArray(list)
+      ? list.map((c) => String((c as Api2Creator | undefined)?.name ?? '').trim()).filter(Boolean)
+      : []
+  if (!Array.isArray(creaters)) return names(creaters.voice_by)
+  const hasType = creaters.some((c) => Boolean(c?.type || c?.type_string))
+  if (!hasType) return names(creaters)
+  const voice = creaters.filter((c) => {
+    const t = `${c?.type ?? ''} ${c?.type_string ?? ''}`.toLowerCase()
+    return t.includes('voice') || t.includes('声優') || t.includes('声优')
+  })
+  return names(voice)
+}
+
+/**
+ * api2 的可读年龄分级 → 项目内部的「年龄指定」文案。
+ * 只认已知值，未知值一律留空（留空 = 保持原状，不会把 R18 误标成「全年龄」）。
+ */
+export function api2AgeRating(raw: string | undefined): string {
+  const v = (raw || '').trim().toLowerCase()
+  if (!v) return ''
+  if (v === 'general' || v === 'all' || v === 'all_ages') return '全年齢'
+  if (v === 'adult' || v === 'r18' || v === 'r-18') return 'R18'
+  if (v === 'r15') return 'R15'
+  return ''
+}
+
+/** 评分人数：把 api2 的评分分布各档求和（与 api1 的 rate_count 完全一致）。 */
+export function api2RatingCount(detail: Api2Data['rate_count_detail']): number | null {
+  if (!detail) return null
+  const nums = Array.isArray(detail)
+    ? detail.map((d) => toNumber(d?.count))
+    : Object.values(detail).map((v) => toNumber(v))
+  const valid = nums.filter((n): n is number => n != null && n >= 0)
+  if (!valid.length) return null
+  return valid.reduce((a, b) => a + b, 0)
+}
+
+/** api2 的其它语言版本 → 项目内的翻译列表（跳过自身与非法 RJ 号）。 */
+export function api2Translations(list: Api2Edition[] | undefined, selfRj: string): DlsiteTranslation[] {
+  const out: DlsiteTranslation[] = []
+  const self = selfRj.toUpperCase()
+  const seen = new Set<string>()
+  for (const e of list || []) {
+    const rj = String(e.workno || '').trim().toUpperCase()
+    if (!/^RJ\d{6,10}$/.test(rj) || rj === self || seen.has(rj)) continue
+    const key = String(e.lang || '').trim().toUpperCase()
+    const lang = EDITION_LANGS[key] || { code: key.toLowerCase(), label: String(e.label || key) }
+    seen.add(rj)
+    out.push({ rj_code: rj, language: lang.code, language_label: lang.label })
+  }
+  return out
+}
+
+/**
+ * 把 api2 的字段映射进 meta（只写有值的项）。
+ *
+ * api2 是结构化直出，比作品页解析更可靠：社团、类型标签、翻译版本、年龄分级都直接给，
+ * 价格是日元原价（不受 locale 影响）。评分只有 0.1 精度，所以这里不写 rating，
+ * 留空让 api1 的 `rate_average_2dp` 填 —— 绝不把四舍五入值写进库。
+ */
+export function applyApi2(meta: Partial<DlsiteMeta>, api2: Api2Data, base: string): void {
+  if (api2.work_name) meta.title = api2.work_name.trim()
+  if (api2.maker_name) meta.circle = api2.maker_name.trim()
+  const cover = api2.image_main?.url || api2.work_image || ''
+  if (cover && !meta.cover_url) {
+    const abs = absolutizeCover(cover)
+    meta.cover_url = abs ? absolutize(abs, base) : ''
+    if (meta.cover_url) meta.cover_source = coverSourceOf(meta.cover_url)
+  }
+  if (api2.regist_date) meta.release_date = normalizeReleaseDate(api2.regist_date)
+  if (!meta.series) meta.series = (api2.title_name || api2.series_name || '').trim()
+  const actors = api2Actors(api2.creaters)
+  if (!meta.actors?.length && actors.length) meta.actors = actors
+  const genres = api2.genres?.length ? api2.genres : api2.genres_replaced
+  if (!meta.tags?.length && genres?.length) {
+    meta.tags = genres
+      .map((g) => ({ name: (g.name || '').trim(), category: 'ジャンル' }))
+      .filter((t) => t.name)
+  }
+  if (!meta.age_rating) meta.age_rating = api2AgeRating(api2.age_category_string)
+  const trans = api2Translations(api2.language_editions, meta.rj_code || '')
+  if (!meta.translations?.length && trans.length) meta.translations = trans
+  if (meta.price == null) meta.price = toNumber(api2.official_price) ?? toNumber(api2.price)
+  if (meta.rating_count == null) meta.rating_count = api2RatingCount(api2.rate_count_detail)
+}
+
+/** 作品页解析结果只补空缺：JSON 已经拿到的字段以 JSON 为准（结构更可靠）。 */
+function mergeParsed(meta: Partial<DlsiteMeta>, parsed: Partial<DlsiteMeta>, base: string): void {
+  if (!meta.title && parsed.title) meta.title = parsed.title
+  if (!meta.circle && parsed.circle) meta.circle = parsed.circle
+  if (!meta.release_date && parsed.release_date) meta.release_date = parsed.release_date
+  if (!meta.series && parsed.series) meta.series = parsed.series
+  if (!meta.age_rating && parsed.age_rating) meta.age_rating = parsed.age_rating
+  if (!meta.actors?.length && parsed.actors?.length) meta.actors = parsed.actors
+  if (!meta.tags?.length && parsed.tags?.length) meta.tags = parsed.tags
+  if (!meta.translations?.length && parsed.translations?.length) meta.translations = parsed.translations
+  if (!meta.cover_url && parsed.cover_url) {
+    const abs = absolutize(parsed.cover_url, base)
+    // DLsite 的「无图」占位图不算有效封面
+    meta.cover_url = abs.includes('no_img_main.gif') ? '' : abs
+    if (meta.cover_url) meta.cover_source = coverSourceOf(meta.cover_url)
+  }
+}
+
 /**
  * 抓取并解析某个 RJ 作品的完整元数据。
  *
- * 主源是 DLsite 作品页 HTML（带 locale cookie，返回指定语言）。按页面返回分类处理：
- * - 地区禁售（200 限制页）：立即返回，**任何兜底源都不调**；
- * - 不存在 / 已下架（404）：依次试 announce 预告页 → JSON api2（product.json，字段最全）
- *   → JSON api1（info/ajax，下架后仍返回元数据，插件已验证）→ ci-en/社团 profile 页补社团名，
- *   最后才用 HVDB 兜底；
- * - 网络异常 / 风控与改版页：只试 DLsite 自己的接口，**不碰 HVDB**，避免临时故障污染库。
+ * 数据源顺序（2026-11 起）：
+ * 1. **api2 `product.json` + touch JSON 并行**。api2 直出社团、类型标签、翻译版本、
+ *    年龄分级、系列、发售日、封面、日元原价，一条请求就能凑齐静态字段；touch 给
+ *    销量 / 精确评分 / 评论数。api2 本身也受地区限制，所以「api2 拿到作品」等价于
+ *    「当前线路可以正常访问」—— 此时**不再抓作品页**（730KB HTML），状态记 ok。
+ * 2. api2 没有 → 抓作品页 HTML 判定状态（这是唯一能区分「禁售」与「下架」的手段）：
+ *    - 200 且信息区在 → ok，解析结果只补空缺；
+ *    - 200 限制页（无信息区 + 命中禁售文案）→ region_blocked，**立即返回，不调任何兜底**；
+ *    - 404 → not_found，才允许 api1（下架后仍返回元数据）与 HVDB 兜底；
+ *    - 其它（网络 / 风控 / 改版页）→ error，不碰 HVDB，下次扫描继续重抓。
  *
- * 销量 / 价格 / 评分等动态数据来自 DLsite 内部 JSON 接口（尽力而为，失败不影响主体）。
- *
- * 返回的 `fetch_status` 记录 DLsite 这次的返回状态，调用方写入作品表：
- * - region_blocked 时**直接返回，不走任何兜底** —— 兜底源（HVDB）会把标题/社团/标签
- *   凑成「看起来完整」，导致换到可用线路后不再重抓，反过来污染库里的数据。
- * - not_found 才允许 HVDB 兜底，此时库里的数据是 DLsite 确实没有时的补充。
- *
- * 只有所有来源都拿不到任何有效信息时才抛错，调用方据此决定保留旧数据。
+ * 返回的 `fetch_status` 由调用方写入作品表，决定下次扫描是否重抓。
+ * 只有所有来源都拿不到任何有效信息时才抛错，调用方据此保留旧数据。
  */
 export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta>> {
   const settings = getSettings()
@@ -125,15 +254,6 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
   const path = settings.dlsite_path || '/maniax/work/=/product_id/{rj}.html'
   const url = base + path.replace('{rj}', rj_code)
 
-  // 作品页与动态数据相互独立，并行发出省一次往返；JSON 失败不影响主体（提前 catch 防未处理拒绝）
-  const jsonPromise = fetchJson<Record<string, DlsiteAjaxItem>>(
-    `${base}/maniax-touch/product/info/ajax?product_id=${rj_code}`
-  ).catch((e) => {
-    console.warn(`[dlsite] ${rj_code} dynamic meta failed: ${(e as Error).message}`)
-    return null
-  })
-
-  // 1) HTML 主源：作品页 → 404/异常时试 announce 预告页（结构与作品页同构，复用同一解析器）
   const meta: Partial<DlsiteMeta> = {
     rj_code,
     actors: [],
@@ -145,126 +265,100 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
     rating_count: null,
     fetch_status: 'unknown',
   }
-  let pageHtml = ''
-  try {
-    pageHtml = await fetchHtml(url, { retryOn404: false })
-    meta.fetch_status = 'ok'
-  } catch (e) {
-    meta.fetch_status = isNotFoundError(e) ? 'not_found' : 'error'
+
+  // 1) api2 与动态数据并行发出，省一次往返；touch 失败不影响主体
+  const touchPromise = fetchJson<Record<string, DlsiteAjaxItem>>(
+    `${base}/maniax-touch/product/info/ajax?product_id=${rj_code}`
+  ).catch((e) => {
+    console.warn(`[dlsite] ${rj_code} dynamic meta failed: ${(e as Error).message}`)
+    return null
+  })
+  const [api2, touch] = await Promise.all([fetchApi2(rj_code), touchPromise])
+
+  const api2Ok = Boolean(api2 && (api2.work_name || api2.workno))
+  // 动态数据（实时销量 / 精确评分）优先写入，api2 只补静态字段里还空着的项
+  applyDynamic(meta, touch?.[rj_code])
+  if (api2 && api2Ok) applyApi2(meta, api2, base)
+
+  // 2) api2 命中：静态字段已齐，唯一还要抓作品页的原因是「接口形态变了」——
+  //    连 creaters / genres 字段都不存在，说明声优 / 标签完全没拿到，补一次 HTML 确认。
+  let needHtml = !api2Ok
+  if (api2 && api2Ok) {
+    const creatorKnown = api2.creaters !== undefined
+    const genresKnown = api2.genres !== undefined || api2.genres_replaced !== undefined
+    needHtml = (!meta.actors?.length && !creatorKnown) || (!meta.tags?.length && !genresKnown)
+  }
+  // api2 命中即已确认「当前线路可正常访问」，状态先钉成 ok：
+  // 后面补 HTML 只是补字段，成败都不影响这个判断（否则会退化成 unknown → 每次扫描重抓）
+  if (api2Ok) meta.fetch_status = 'ok'
+
+  if (needHtml) {
+    let pageHtml = ''
     try {
-      pageHtml = await fetchHtml(`${base}/maniax/announce/=/product_id/${rj_code}.html`, { retryOn404: false })
-    } catch {
-      /* 预告页也没有：状态保持 not_found / error */
+      pageHtml = await fetchHtml(url, { retryOn404: false })
+      if (!api2Ok) meta.fetch_status = 'ok'
+    } catch (e) {
+      if (!api2Ok) meta.fetch_status = isNotFoundError(e) ? 'not_found' : 'error'
+      try {
+        pageHtml = await fetchHtml(`${base}/maniax/announce/=/product_id/${rj_code}.html`, {
+          retryOn404: false,
+        })
+      } catch {
+        /* 预告页也没有：状态保持上面判定的值 */
+      }
+    }
+
+    if (pageHtml) {
+      mergeParsed(meta, parseWorkPage(pageHtml, rj_code), base)
+
+      // 地区禁售：当前线路所在区域不卖。api2 已经拿到数据说明线路可用，不采信禁售判定。
+      if (!api2Ok && isRegionBlockedPage(pageHtml)) {
+        meta.fetch_status = 'region_blocked'
+        meta.actors = []
+        meta.tags = []
+        // 禁售页的 og:image 是站点通用宣传图（不是作品封面），一律不采用：
+        // 否则会被当成 dlsite 来源的封面存下来，日后 DLsite 给出真封面时不再替换。
+        meta.cover_url = ''
+        meta.cover_source = ''
+        return meta
+      }
+      // 200 但既没有信息区、也没命中禁售文案：风控 / 维护 / 改版页，不算「DL 正常返回」。
+      // 标成 error 让它在下次扫描时继续重抓，而不是带着兜底数据被当成完整作品。
+      if (!api2Ok && !hasInfoSection(pageHtml) && meta.fetch_status === 'ok') meta.fetch_status = 'error'
     }
   }
-  if (pageHtml) {
-    Object.assign(meta, parseWorkPage(pageHtml, rj_code))
-    if (meta.cover_url) {
-      meta.cover_url = absolutize(meta.cover_url, base)
-      // DLsite 的「无图」占位图不算有效封面，置空让 api2/api1/HVDB 兜底
-      if (meta.cover_url.includes('no_img_main.gif')) meta.cover_url = ''
-    }
-    if (meta.cover_url) meta.cover_source = coverSourceOf(meta.cover_url)
+  // 走到这里 needHtml=false 一定意味着 api2Ok（状态已在上面钉成 ok），无需再处理 else
 
-    // 地区禁售：DLsite 明确说「当前区域无法购买」→ 立刻返回，一个兜底源都不调。
-    // 页面里已有的 title / circle（og:title）保留，让列表里还能认出是哪部作品；
-    // 下次换到可用线路扫描时，fetch_status 会触发无条件重抓。
-    if (isRegionBlockedPage(pageHtml)) {
-      meta.fetch_status = 'region_blocked'
-      meta.actors = []
-      meta.tags = []
-      // 禁售页的 og:image 是站点通用宣传图（不是作品封面），一律不采用：
-      // 否则会被当成 dlsite 来源的封面存下来，日后 DLsite 给出真封面时不再替换。
-      meta.cover_url = ''
-      meta.cover_source = ''
-      return meta
-    }
-    // 200 但既没有信息区、也没命中禁售文案：风控 / 维护 / 改版页，不算「DL 正常返回」。
-    // 标成 error 让它在下次扫描时继续重抓，而不是带着兜底数据被当成完整作品。
-    if (!hasInfoSection(pageHtml)) meta.fetch_status = 'error'
-  }
-
-  // 2) 动态数据：touch JSON 与作品页并行发出，HTML 解析完就取回来。
-  //    作品页被地区限制拦截时这一步仍可能拿到，属于「能拿一点是一点」。
-  const dynamic = await jsonPromise
-  applyDynamic(meta, dynamic?.[rj_code])
-
-  // 3) 只对缺失字段做惰性兜底，避免对在售作品产生额外请求
-  const need = (v: unknown): boolean => !v || (Array.isArray(v) && v.length === 0)
-  const needTitle = need(meta.title)
-  const needCircle = need(meta.circle)
-  const needCover = need(meta.cover_url)
-  const needActors = need(meta.actors)
-  const needTags = need(meta.tags)
-  const needRelease = need(meta.release_date)
-  // 动态数据缺失（接口被拦 / 返回不完整）也算「需要兜底」
-  const needDynamic = meta.price == null || meta.rating == null || meta.rating_count == null
-
-  let api2: Api2Data | null = null
-  let api1: Api1Data | null = null
-
-  if (needTitle || needCircle || needCover || needActors || needTags || needRelease) {
-    api2 = await fetchApi2(rj_code)
-    if (api2) {
-      if (needTitle && api2.work_name) meta.title = api2.work_name.trim()
-      if (needCircle && api2.maker_name) meta.circle = api2.maker_name.trim()
-      if (needCover && (api2.image_main?.url || api2.work_image)) {
-        meta.cover_url = absolutizeCover(api2.image_main?.url || api2.work_image || '')
-        meta.cover_source = coverSourceOf(meta.cover_url)
-      }
-      if (needRelease && api2.regist_date) meta.release_date = normalizeReleaseDate(api2.regist_date)
-      if (needActors && api2.creaters?.voice_by?.length) {
-        meta.actors = api2.creaters.voice_by.map((v) => v.name.trim()).filter(Boolean)
-      }
-      if (needTags && api2.genres?.length) {
-        meta.tags = api2.genres
-          .map((g) => ({ name: g.name.trim(), category: 'ジャンル' }))
-          .filter((t) => t.name)
-      }
-      // 年龄分级兜底：只在 api2 返回可读字符串（all / r18）时才用。
-      // 线上实际返回的是数字编码（如 3 = R18），含义未文档化 —— 宁可留空不打标，
-      // 也不能把 R18 作品误标成「全年龄」。
-      const ageRaw = String(api2.age_category ?? '')
-        .trim()
-        .toLowerCase()
-      if (!meta.age_rating && ageRaw) {
-        if (ageRaw.includes('r18') || ageRaw.includes('adult')) meta.age_rating = 'R18'
-        else if (ageRaw === 'all' || ageRaw.includes('全年齢') || ageRaw.includes('all_age')) meta.age_rating = '全年齢'
-      }
-    }
-  }
-
-  // 4) api1：缺 cover/circle 时是下架作品的核心兜底源；动态数据没拿全时也用它再要一次
-  //    （api1 与 touch 返回同一套字段，任一接口被拦时另一个还能补上价格 / 评分 / 评论数）
-  if (!meta.cover_url || !meta.circle || needDynamic) {
-    api1 = await fetchApi1(rj_code)
+  // 3) 动态数据仍缺（touch 被拦 / 返回不全）时用 api1 再要一次：两者同一套字段，
+  //    任一接口被限制时另一个还能补上价格 / 评分 / 评论数。api1 也是下架作品的核心兜底源。
+  let makerId = api2?.maker_id
+  if (meta.price == null || meta.rating == null || meta.rating_count == null || !meta.circle) {
+    const api1 = await fetchApi1(rj_code)
     if (api1) {
       if (!meta.title && api1.work_name) meta.title = api1.work_name.trim()
       if (!meta.cover_url && api1.work_image) {
         meta.cover_url = absolutizeCover(api1.work_image)
-        meta.cover_source = coverSourceOf(meta.cover_url)
+        if (meta.cover_url) meta.cover_source = coverSourceOf(meta.cover_url)
       }
       if (!meta.release_date && api1.regist_date) meta.release_date = normalizeReleaseDate(api1.regist_date)
       applyDynamic(meta, api1)
+      if (makerId == null || makerId === '') makerId = api1.maker_id
     }
   }
 
-  // 5) 社团名兜底：api2.maker_name 拿不到时，用 maker_id 查 ci-en / 社团 profile 页
-  if (!meta.circle) {
-    const makerId = api2?.maker_id ?? api1?.maker_id
-    if (makerId != null && makerId !== '') {
-      const name = await fetchCircleName(makerId)
-      if (name) meta.circle = name
-    }
+  // 4) 社团名兜底：api2.maker_name 拿不到时，用 maker_id 查 ci-en / 社团 profile 页
+  if (!meta.circle && makerId != null && makerId !== '') {
+    const name = await fetchCircleName(makerId)
+    if (name) meta.circle = name
   }
 
-  // 6) HVDB 兜底：只在 DLsite 确认「不存在 / 已下架」（404）时启用，其余状态一概不碰
+  // 5) HVDB 兜底：只在 DLsite 确认「不存在 / 已下架」（404）时启用，其余状态一概不碰
   if (shouldUseFallbackSite(meta.fetch_status, meta)) {
     const hvdb = await fetchHvdbMeta(rj_code)
     if (hvdb) {
       if (!meta.title && hvdb.title) meta.title = hvdb.title
       if (!meta.circle && hvdb.circle) meta.circle = hvdb.circle
-      // 封面优先级：DLsite(HTML/JSON) 有封面就用 DLsite 的，只有 DLsite 完全没有时才用 HVDB。
+      // 封面优先级：DLsite(JSON/HTML) 有封面就用 DLsite 的，只有完全没有时才用 HVDB
       if (hvdb.cover_url && !meta.cover_url) {
         meta.cover_url = hvdb.cover_url
         meta.cover_source = coverSourceOf(hvdb.cover_url)
@@ -279,7 +373,7 @@ export async function fetchWorkMeta(rj_code: string): Promise<Partial<DlsiteMeta
     console.warn(`[dlsite] ${rj_code} 价格与评分均未取到（动态接口可能被限制）`)
   }
 
-  // 7) 全部来源都无有效信息才算失败（调用方据此保留旧数据）
+  // 6) 全部来源都无有效信息才算失败（调用方据此保留旧数据）
   const hasAny =
     Boolean(meta.title || meta.circle || meta.cover_url || meta.release_date) ||
     Boolean(meta.actors?.length || meta.tags?.length)

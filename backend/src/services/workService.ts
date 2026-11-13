@@ -317,10 +317,14 @@ function applyMeta(db: DatabaseSync, workId: number, meta: Partial<DlsiteMeta>, 
 
 /**
  * 集合类字段（声优 / 标签 / 翻译 / 全年龄标记）重建。
- * 地区禁售时这些字段本来就没有，重建会把库里已有的数据清空 —— 直接跳过。
+ *
+ * 只在这两种状态下重建：`ok`（DLsite 正常回应）与 `not_found`（下架，靠 api1 / HVDB 补全）。
+ * 其余状态（禁售 / 网络异常 / 未知）本来就没抓到这些字段，重建会把库里已有的数据清空 ——
+ * 一律跳过，宁可这次不更新。
  */
 function applyCollections(db: DatabaseSync, workId: number, meta: Partial<DlsiteMeta>): void {
-  if (meta.fetch_status === 'region_blocked') return
+  const status = String(meta.fetch_status || '')
+  if (status !== 'ok' && status !== 'not_found') return
   setActors(db, workId, meta.actors || [])
   setTags(db, workId, meta.tags || [])
   syncAllAgesTag(db, workId, meta.age_rating)
